@@ -103,13 +103,25 @@ class ExecutionService:
                     step.status = "SUCCESS"
 
                 elif step_name == "SELECT_ACTION":
-                    action, reason, conf = recovery_agent.evaluate_case(db, case)
+                    eval_res = recovery_agent.evaluate_case_full(db, case)
+                    action = eval_res["recommended_action"]
+                    reason = eval_res["reason"]
+                    conf = eval_res["confidence"]
                     agent_run.recommended_action = action
                     case.recommended_action = action
                     case.agent_confidence = conf
-                    step.output_summary = json.dumps({"action": action, "reason": reason, "confidence": conf})
+                    step.output_summary = json.dumps({
+                        "action": action,
+                        "reason": reason,
+                        "confidence": conf,
+                        "llm_used": eval_res.get("llm_used", False),
+                        "model": eval_res.get("model", "mistral-small-latest"),
+                        "risk_assessment": eval_res.get("risk_assessment", "MEDIUM"),
+                        "supporting_factors": eval_res.get("supporting_factors", [])
+                    })
                     step.status = "SUCCESS"
-                    audit_service.record_event(db, "ACTION_RECOMMENDED", "AGENT", f"Agent proposed {action}: {reason}", case_id=case.id, agent_run_id=run_id)
+                    audit_actor = "LLM_AGENT" if eval_res.get("llm_used") else "AGENT"
+                    audit_service.record_event(db, "ACTION_RECOMMENDED", audit_actor, f"Agent proposed {action}: {reason}", case_id=case.id, agent_run_id=run_id)
 
                 elif step_name == "CHECK_GUARDRAILS":
                     action = agent_run.recommended_action or "RETRY"
@@ -307,12 +319,24 @@ class ExecutionService:
                     output_data = {"prior_actions_count": len(prior_actions), "retry_count": case.retry_count}
 
                 elif step_name == "SELECT_ACTION":
-                    action, reason, conf = recovery_agent.evaluate_case(db, case)
+                    eval_res = recovery_agent.evaluate_case_full(db, case)
+                    action = eval_res["recommended_action"]
+                    reason = eval_res["reason"]
+                    conf = eval_res["confidence"]
                     agent_run.recommended_action = action
                     case.recommended_action = action
                     case.agent_confidence = conf
-                    output_data = {"action": action, "reason": reason, "confidence": conf}
-                    audit_service.record_event(db, "ACTION_RECOMMENDED", "AGENT", f"Agent proposed {action}: {reason}", case_id=case.id, agent_run_id=run_id)
+                    output_data = {
+                        "action": action,
+                        "reason": reason,
+                        "confidence": conf,
+                        "llm_used": eval_res.get("llm_used", False),
+                        "model": eval_res.get("model", "mistral-small-latest"),
+                        "risk_assessment": eval_res.get("risk_assessment", "MEDIUM"),
+                        "supporting_factors": eval_res.get("supporting_factors", [])
+                    }
+                    audit_actor = "LLM_AGENT" if eval_res.get("llm_used") else "AGENT"
+                    audit_service.record_event(db, "ACTION_RECOMMENDED", audit_actor, f"Agent proposed {action}: {reason}", case_id=case.id, agent_run_id=run_id)
 
                 elif step_name == "CHECK_GUARDRAILS":
                     action = agent_run.recommended_action or "RETRY"

@@ -1,0 +1,96 @@
+{
+  "model_name": "Logistic Regression (Synthetic Telemetry v2.0)",
+  "dataset": "payment_failure.csv (Synthetic Payment Failure Telemetry)",
+  "is_synthetic": true,
+  "disclaimer": "These metrics reflect evaluation on a synthetic payment failure telemetry dataset and demonstrate technical ML architecture and probability estimation functionality, not real-world payment recovery performance.",
+  "evaluation_type": "Chronological Held-Out Test Set",
+  "train_rows": 15399,
+  "val_rows": 3301,
+  "test_rows": 3300,
+  "accuracy": 0.7624,
+  "precision": 0.7764,
+  "recall": 0.9215,
+  "f1_score": 0.8428,
+  "roc_auc": 0.783,
+  "pr_auc": 0.8736,
+  "log_loss": 0.4986,
+  "brier_score": 0.1637,
+  "confusion_matrix": [
+    [
+      415,
+      605
+    ],
+    [
+      179,
+      2101
+    ]
+  ],
+  "baseline": {
+    "majority_class": 1,
+    "baseline_accuracy": 0.6909,
+    "baseline_f1": 0.8172
+  },
+  "old_invoice_model_benchmark": {
+    "dataset": "billing.csv (General Invoices)",
+    "roc_auc": 0.5212,
+    "notes": "Domain mismatch: General invoices lacked decline telemetry."
+  },
+  "threshold_analysis": [
+    {
+      "threshold": 0.3,
+      "accuracy": 0.7485,
+      "precision": 0.7407,
+      "recall": 0.9785,
+      "f1_score": 0.8432,
+      "false_positives": 781,
+      "false_negatives": 49
+    },
+    {
+      "threshold": 0.4,
+      "accuracy": 0.7594,
+      "precision": 0.7578,
+      "recall": 0.9579,
+      "f1_score": 0.8462,
+      "false_positives": 698,
+      "false_negatives": 96
+    },
+    {
+      "threshold": 0.5,
+      "accuracy": 0.7624,
+      "precision": 0.7764,
+      "recall": 0.9215,
+      "f1_score": 0.8428,
+      "false_positives": 605,
+      "false_negatives": 179
+    },
+    {
+      "threshold": 0.6,
+      "accuracy": 0.7548,
+      "precision": 0.8001,
+      "recall": 0.8601,
+      "f1_score": 0.829,
+      "false_positives": 490,
+      "false_negatives": 319
+    },
+    {
+      "threshold": 0.7,
+      "accuracy": 0.7212,
+      "precision": 0.8327,
+      "recall": 0.7465,
+      "f1_score": 0.7872,
+      "false_positives": 342,
+      "false_negatives": 578
+    },
+    {
+      "threshold": 0.8,
+      "accuracy": 0.6327,
+      "precision": 0.875,
+      "recall": 0.5465,
+      "f1_score": 0.6728,
+      "false_positives": 178,
+      "false_negatives": 1034
+    }
+  ],
+  "top_features": [],
+  "trained_at": "2026-08-28T08:21:01.918371+00:00"
+}

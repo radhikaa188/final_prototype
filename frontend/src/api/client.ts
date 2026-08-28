@@ -1,5 +1,4 @@
-const API_BASE = '${import.meta.env.VITE_API_URL}/api';
-
+const API_BASE = `${import.meta.env.VITE_API_URL}/api`;
 export async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${endpoint}`, {
     headers: {
@@ -9,12 +8,22 @@ export async function fetchApi<T>(endpoint: string, options?: RequestInit): Prom
     ...options,
   });
 
+  const contentType = res.headers.get('content-type') || '';
+
   if (!res.ok) {
-    const errorData = await res.json().catch(() => ({ detail: 'An error occurred' }));
-    throw new Error(errorData.detail || `HTTP Error ${res.status}`);
+    let errorDetail = `HTTP Error ${res.status}`;
+    if (contentType.includes('application/json')) {
+      const errorData = await res.json().catch(() => ({ detail: 'An error occurred' }));
+      errorDetail = errorData.detail || errorDetail;
+    }
+    throw new Error(errorDetail);
   }
 
-  return res.json();
+  if (contentType.includes('application/json')) {
+    return res.json();
+  }
+  const text = await res.text();
+  throw new Error(`Expected JSON response from API, received: ${text.substring(0, 60)}...`);
 }
 
 export const api = {

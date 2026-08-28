@@ -10,7 +10,7 @@ import {
   ShieldCheck,
   Check
 } from 'lucide-react';
-import { api } from '../api/client';
+import { api, API_BASE } from '../api/client';
 import { StatusBadge } from '../components/common/StatusBadge';
 
 export const AgentExecution: React.FC = () => {
@@ -41,58 +41,88 @@ export const AgentExecution: React.FC = () => {
   useEffect(() => {
     if (!runId) return;
 
-    api.getAgentRun(runId).then((data) => {
-      setRunDetails(data);
-      if (data.steps && data.steps.length > 0) {
-        setSteps(data.steps);
-      }
-      if (data.status === 'COMPLETED' || data.status === 'BLOCKED') {
-        setIsCompleted(true);
-        setFinalResult(data.final_result || data.status);
-      }
-    });
+    let pollInterval: any = null;
 
-    const eventSource = new EventSource(`/api/agent/runs/${runId}/stream`);
-
-    eventSource.onmessage = (event) => {
+    const fetchRunData = async () => {
       try {
-        let rawData = event.data;
-        if (typeof rawData === 'string' && rawData.startsWith('data: ')) {
-          rawData = rawData.substring(6).trim();
+        const data = await api.getAgentRun(runId);
+        setRunDetails(data);
+        if (data.steps && data.steps.length > 0) {
+          setSteps(data.steps);
         }
-        const payload = JSON.parse(rawData);
-        
-        if (payload.event === 'COMPLETE') {
+        if (data.status === 'COMPLETED' || data.status === 'BLOCKED') {
           setIsCompleted(true);
-          setFinalResult(payload.final_result || 'COMPLETED');
-          eventSource.close();
-          return;
-        }
-
-        if (payload.step_name) {
-          setActiveStep(payload.step_name);
-          setSteps((prev) => {
-            const existingIdx = prev.findIndex((s) => s.step_name === payload.step_name);
-            if (existingIdx >= 0) {
-              const updated = [...prev];
-              updated[existingIdx] = { ...updated[existingIdx], ...payload };
-              return updated;
-            }
-            return [...prev, payload];
-          });
+          setFinalResult(data.final_result || data.status);
+          if (pollInterval) {
+            clearInterval(pollInterval);
+            pollInterval = null;
+          }
         }
       } catch (err) {
-        console.error('Error parsing SSE event:', err);
+        console.error('Failed to fetch run data:', err);
       }
     };
 
-    eventSource.onerror = (err) => {
-      console.log('SSE connection closed or completed.', err);
-      eventSource.close();
-    };
+    fetchRunData();
+
+    // Setup SSE connection with correct API_BASE
+    const sseUrl = `${API_BASE}/agent/runs/${runId}/stream`;
+    let eventSource: EventSource | null = null;
+
+    try {
+      eventSource = new EventSource(sseUrl);
+
+      eventSource.onmessage = (event) => {
+        try {
+          let rawData = event.data;
+          if (typeof rawData === 'string' && rawData.startsWith('data: ')) {
+            rawData = rawData.substring(6).trim();
+          }
+          const payload = JSON.parse(rawData);
+          
+          if (payload.event === 'COMPLETE') {
+            setIsCompleted(true);
+            setFinalResult(payload.final_result || 'COMPLETED');
+            if (eventSource) eventSource.close();
+            fetchRunData();
+            return;
+          }
+
+          if (payload.step_name) {
+            setActiveStep(payload.step_name);
+            setSteps((prev) => {
+              const existingIdx = prev.findIndex((s) => s.step_name === payload.step_name);
+              if (existingIdx >= 0) {
+                const updated = [...prev];
+                updated[existingIdx] = { ...updated[existingIdx], ...payload };
+                return updated;
+              }
+              return [...prev, payload];
+            });
+          }
+        } catch (err) {
+          console.error('Error parsing SSE event:', err);
+        }
+      };
+
+      eventSource.onerror = () => {
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+        // Fallback to REST polling every 1.5s if stream disconnected or uncompleted
+        if (!pollInterval) {
+          pollInterval = setInterval(fetchRunData, 1500);
+        }
+      };
+    } catch (e) {
+      console.warn('EventSource failed, using REST polling fallback:', e);
+      pollInterval = setInterval(fetchRunData, 1500);
+    }
 
     return () => {
-      eventSource.close();
+      if (eventSource) eventSource.close();
+      if (pollInterval) clearInterval(pollInterval);
     };
   }, [runId]);
 

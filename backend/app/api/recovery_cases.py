@@ -136,6 +136,16 @@ def get_case_detail(case_id: str, db: Session = Depends(get_db)):
             "reason": guardrail_reason,
             "checks": guardrail_checks
         },
+        "customer_action_info": {
+            "required": case.customer_action_required,
+            "type": case.customer_action_type,
+            "description": case.customer_action_description,
+            "status": case.customer_action_status,
+            "notified_at": case.customer_notified_at.isoformat() if case.customer_notified_at else None,
+            "waiting_since": case.waiting_since.isoformat() if case.waiting_since else None,
+            "retry_after": case.retry_after.isoformat() if case.retry_after else None,
+            "expires_at": case.expires_at.isoformat() if case.expires_at else None,
+        },
         "retry_count": case.retry_count,
         "actions_history": [
             {
@@ -164,6 +174,8 @@ def approve_recovery_case(case_id: str, db: Session = Depends(get_db)):
     case = db.query(RecoveryCase).filter(RecoveryCase.id == case_id).first()
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
+    if case.status == "RECOVERED":
+        raise HTTPException(status_code=400, detail="Case already recovered — cannot re-execute")
 
     # Create agent_run
     agent_run = AgentRun(
@@ -188,6 +200,8 @@ def execute_recovery_case(case_id: str, db: Session = Depends(get_db)):
     case = db.query(RecoveryCase).filter(RecoveryCase.id == case_id).first()
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
+    if case.status == "RECOVERED":
+        raise HTTPException(status_code=400, detail="Case already recovered — cannot re-execute")
 
     agent_run = AgentRun(
         case_id=case.id,
@@ -225,6 +239,8 @@ def escalate_recovery_case(case_id: str, db: Session = Depends(get_db)):
     case = db.query(RecoveryCase).filter(RecoveryCase.id == case_id).first()
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
+    if case.status == "RECOVERED":
+        raise HTTPException(status_code=400, detail="Case already recovered — cannot re-execute")
 
     case.status = "ESCALATED"
     case.next_action = "HUMAN_REVIEW"
@@ -233,3 +249,74 @@ def escalate_recovery_case(case_id: str, db: Session = Depends(get_db)):
     audit_service.record_event(db, "CASE_ESCALATED", "HUMAN", "User escalated case for senior human review.", case_id=case.id)
 
     return {"case_id": case.id, "status": "ESCALATED"}
+
+@router.post("/{case_id}/customer-action")
+def complete_customer_action(case_id: str, payload: dict = None, db: Session = Depends(get_db)):
+    case = db.query(RecoveryCase).filter(RecoveryCase.id == case_id).first()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    
+    payment = db.query(Payment).filter(Payment.id == case.payment_id).first()
+    if case.status == "RECOVERED" or (payment and payment.status == "SUCCESS"):
+        raise HTTPException(status_code=400, detail="Case already resolved as RECOVERED — cannot perform action")
+
+    action_type = (payload or {}).get("action_type") or case.customer_action_type or "ADD_FUNDS"
+    case.customer_action_status = "COMPLETED"
+    case.customer_action_type = action_type
+    
+    audit_service.record_event(
+        db,
+        "CUSTOMER_ACTION_COMPLETED",
+        "HUMAN",
+        f"Customer completed required action: {action_type}. Triggering immediate agent re-evaluation.",
+        case_id=case.id
+    )
+    db.commit()
+
+    # Idempotency check: check if an active run exists
+    active_run = db.query(AgentRun).filter(AgentRun.case_id == case.id, AgentRun.status.in_(["PENDING", "RUNNING"])).first()
+    if active_run:
+        return {"run_id": active_run.id, "case_id": case.id, "status": "RE_EVALUATING", "message": "Active run already in progress."}
+
+    new_run = AgentRun(case_id=case.id, status="PENDING", trigger_type="MANUAL_EXECUTE")
+    db.add(new_run)
+    db.commit()
+    db.refresh(new_run)
+
+    execution_service.run_agent_workflow_sync(new_run.id)
+    db.refresh(case)
+
+    return {"run_id": new_run.id, "case_id": case.id, "case_status": case.status, "customer_action_status": case.customer_action_status}
+
+@router.post("/{case_id}/re-evaluate")
+def reevaluate_recovery_case(case_id: str, db: Session = Depends(get_db)):
+    case = db.query(RecoveryCase).filter(RecoveryCase.id == case_id).first()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    
+    payment = db.query(Payment).filter(Payment.id == case.payment_id).first()
+    if case.status == "RECOVERED" or (payment and payment.status == "SUCCESS"):
+        raise HTTPException(status_code=400, detail="Case already resolved as RECOVERED — cannot re-evaluate")
+
+    audit_service.record_event(
+        db,
+        "MANUAL_REEVALUATION_TRIGGERED",
+        "HUMAN",
+        "User manually triggered recovery case re-evaluation.",
+        case_id=case.id
+    )
+
+    # Idempotency check
+    active_run = db.query(AgentRun).filter(AgentRun.case_id == case.id, AgentRun.status.in_(["PENDING", "RUNNING"])).first()
+    if active_run:
+        return {"run_id": active_run.id, "case_id": case.id, "status": "RE_EVALUATING", "message": "Active run already in progress."}
+
+    new_run = AgentRun(case_id=case.id, status="PENDING", trigger_type="MANUAL_EXECUTE")
+    db.add(new_run)
+    db.commit()
+    db.refresh(new_run)
+
+    execution_service.run_agent_workflow_sync(new_run.id)
+    db.refresh(case)
+
+    return {"run_id": new_run.id, "case_id": case.id, "case_status": case.status}

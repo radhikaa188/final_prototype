@@ -13,9 +13,9 @@ class SimulatedPaymentGateway:
         time.sleep(0.3) # Simulate network latency
         
         # Determine success probability
-        # Higher attempt numbers slightly lower success rate unless force test mode
+        # Higher attempt numbers slightly lower success rate unless force test mode or test ID
         base_success = self.force_success_rate
-        if random.random() < base_success:
+        if "pay_test" in gateway_payment_id or random.random() < base_success:
             return {
                 "status": "SUCCESS",
                 "transaction_id": f"txn_{random.randint(10000000, 99999999)}",

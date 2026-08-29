@@ -18,6 +18,7 @@ import {
 const mainNav = [
   { path: '/', label: 'Command Center', icon: LayoutDashboard },
   { path: '/recovery', label: 'Recovery Queue', icon: RefreshCw },
+  { path: '/customer-actions', label: 'Customer Actions', icon: UserCheck },
   { path: '/agent', label: 'Agent Operations', icon: Bot },
   { path: '/human-review', label: 'Human Review', icon: UserCheck },
 ];

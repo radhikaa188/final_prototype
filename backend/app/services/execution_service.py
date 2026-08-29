@@ -1,6 +1,6 @@
 import json
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Generator
 from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
@@ -26,12 +26,17 @@ class ExecutionService:
                 return None
 
             case = db.query(RecoveryCase).filter(RecoveryCase.id == agent_run.case_id).first()
-            payment = db.query(Payment).filter(Payment.id == case.payment_id).first()
-            customer = db.query(Customer).filter(Customer.id == case.customer_id).first()
+            payment = db.query(Payment).filter(Payment.id == case.payment_id).first() if case else None
+            customer = db.query(Customer).filter(Customer.id == case.customer_id).first() if case else None
+
+            # Early exit if run or case has already reached a terminal state
+            if agent_run.status in ("COMPLETED", "BLOCKED") or (case and case.status in ("RECOVERED", "STOPPED")):
+                return agent_run
 
             agent_run.status = "RUNNING"
             agent_run.started_at = datetime.now(timezone.utc)
-            case.status = "EXECUTING"
+            if case and case.status != "RECOVERED":
+                case.status = "EXECUTING"
             db.commit()
 
             steps = [
@@ -53,6 +58,10 @@ class ExecutionService:
             action_result = None
 
             for idx, (step_name, description) in enumerate(steps, start=1):
+                # Guard against executing steps for a run/case in terminal state
+                if agent_run.status in ("COMPLETED", "BLOCKED") or (case and case.status in ("RECOVERED", "STOPPED")):
+                    break
+
                 step = AgentRunStep(
                     run_id=run_id,
                     step_number=idx,
@@ -108,20 +117,22 @@ class ExecutionService:
                     reason = eval_res["reason"]
                     conf = eval_res["confidence"]
                     agent_run.recommended_action = action
-                    case.recommended_action = action
+                    if case.status != "RECOVERED":
+                        case.recommended_action = action
                     case.agent_confidence = conf
                     step.output_summary = json.dumps({
                         "action": action,
                         "reason": reason,
                         "confidence": conf,
-                        "llm_used": eval_res.get("llm_used", False),
-                        "model": eval_res.get("model", "mistral-small-latest"),
-                        "risk_assessment": eval_res.get("risk_assessment", "MEDIUM"),
+                        "ml_used": eval_res.get("ml_used", True),
+                        "model": eval_res.get("model", "HistGradientBoostingClassifier"),
+                        "probabilities": eval_res.get("probabilities", {}),
+                        "risk_assessment": eval_res.get("risk_assessment", "LOW"),
                         "supporting_factors": eval_res.get("supporting_factors", [])
                     })
                     step.status = "SUCCESS"
-                    audit_actor = "LLM_AGENT" if eval_res.get("llm_used") else "AGENT"
-                    audit_service.record_event(db, "ACTION_RECOMMENDED", audit_actor, f"Agent proposed {action}: {reason}", case_id=case.id, agent_run_id=run_id)
+                    audit_actor = "ML_MODEL" if eval_res.get("ml_used") else "AGENT"
+                    audit_service.record_event(db, "ACTION_RECOMMENDED", audit_actor, f"ML Model proposed {action} ({conf*100:.1f}% conf): {reason}", case_id=case.id, agent_run_id=run_id)
 
                 elif step_name == "CHECK_GUARDRAILS":
                     action = agent_run.recommended_action or "RETRY"
@@ -133,15 +144,30 @@ class ExecutionService:
                     if not allowed:
                         agent_run.status = "BLOCKED"
                         agent_run.error = reason
-                        case.status = "STOPPED"
+                        if case.status != "RECOVERED":
+                            case.status = "STOPPED"
+                            case.closed_at = datetime.now(timezone.utc)
                         db.commit()
                         break
 
                 elif step_name == "EXECUTE":
                     action = agent_run.recommended_action or "RETRY"
-                    if action == "RETRY":
+                    is_cust_req, act_type, act_desc = policy_engine.classify_customer_action_requirement(
+                        payment.failure_reason if payment else None, case.root_cause
+                    )
+
+                    if is_cust_req and case.customer_action_status != "COMPLETED":
+                        notification_service.send_notification(db, case.id, customer.id if customer else None, "CUSTOMER_ACTION_REQUIRED", agent_run_id=run_id)
+                        action_result = {
+                            "status": "CUSTOMER_ACTION_REQUIRED",
+                            "message": act_desc,
+                            "action_type": act_type
+                        }
+                    elif action == "RETRY":
+                        notification_service.send_notification(db, case.id, customer.id if customer else None, "AUTOMATIC_RETRY_ATTEMPTED", agent_run_id=run_id)
                         action_result = gateway_simulator.process_retry(payment.gateway_payment_id if payment else "pay_test", case.revenue_at_risk, case.retry_count + 1)
                     elif action == "CUSTOMER_NUDGE":
+                        notification_service.send_notification(db, case.id, customer.id if customer else None, "CUSTOMER_NUDGE", agent_run_id=run_id)
                         action_result = gateway_simulator.process_nudge(customer.email if customer else "cust@example.com", case.revenue_at_risk)
                     elif action == "HUMAN_REVIEW":
                         action_result = {"status": "ESCALATED", "message": "Case routed to Human Operations queue."}
@@ -177,8 +203,31 @@ class ExecutionService:
                         payment.status = "SUCCESS"
                         case.status = "RECOVERED"
                         case.closed_at = datetime.now(timezone.utc)
+                        case.recommended_action = action_type
                         case.next_action = "NONE"
+                        case.customer_action_status = "CANCELLED"
                         agent_run.final_result = "RECOVERED"
+                    elif exec_status == "CUSTOMER_ACTION_REQUIRED":
+                        policy = policy_engine.get_active_policy(db)
+                        now = datetime.now(timezone.utc)
+                        case.status = "CUSTOMER_ACTION_REQUIRED"
+                        case.customer_action_required = True
+                        case.customer_action_type = action_result.get("action_type", "OTHER")
+                        case.customer_action_description = action_result.get("message", "Customer action required.")
+                        case.waiting_since = now
+                        case.retry_after = now + timedelta(hours=policy.customer_action_wait_hours)
+                        case.expires_at = now + timedelta(hours=policy.customer_action_expire_hours)
+                        case.customer_action_status = "PENDING"
+                        case.next_action = "WAIT_FOR_CUSTOMER_ACTION"
+                        agent_run.final_result = "CUSTOMER_ACTION_REQUIRED"
+                        audit_service.record_event(
+                            db,
+                            "CUSTOMER_ACTION_REQUIRED",
+                            "SYSTEM",
+                            f"Case entered CUSTOMER_ACTION_REQUIRED state ({case.customer_action_type}): {case.customer_action_description}",
+                            case_id=case.id,
+                            agent_run_id=run_id
+                        )
                     elif exec_status == "ESCALATED":
                         case.status = "ESCALATED"
                         case.next_action = "HUMAN_REVIEW"
@@ -200,8 +249,18 @@ class ExecutionService:
                     step.status = "SUCCESS"
 
                 elif step_name == "NOTIFY":
-                    event_type = "RETRY_SUCCESS" if case.status == "RECOVERED" else ("HUMAN_REVIEW_REQUIRED" if case.status == "ESCALATED" else "RETRY_FAILED")
-                    notification_service.send_notification(db, case.id, customer.id if customer else None, event_type)
+                    if case.status == "RECOVERED":
+                        event_type = "RECOVERY_SUCCESS"
+                    elif case.status == "CUSTOMER_ACTION_REQUIRED":
+                        event_type = "CUSTOMER_ACTION_REQUIRED"
+                    elif case.status == "ESCALATED":
+                        event_type = "HUMAN_REVIEW_REQUIRED"
+                    elif case.status == "STOPPED":
+                        event_type = "RECOVERY_STOPPED"
+                    else:
+                        event_type = "RETRY_FAILED"
+
+                    notification_service.send_notification(db, case.id, customer.id if customer else None, event_type, agent_run_id=run_id)
                     step.output_summary = json.dumps({"notification_sent": event_type})
                     step.status = "SUCCESS"
 
@@ -236,12 +295,18 @@ class ExecutionService:
                 return
 
             case = db.query(RecoveryCase).filter(RecoveryCase.id == agent_run.case_id).first()
-            payment = db.query(Payment).filter(Payment.id == case.payment_id).first()
-            customer = db.query(Customer).filter(Customer.id == case.customer_id).first()
+            payment = db.query(Payment).filter(Payment.id == case.payment_id).first() if case else None
+            customer = db.query(Customer).filter(Customer.id == case.customer_id).first() if case else None
+
+            # Early exit if run or case has already reached a terminal state
+            if agent_run.status in ("COMPLETED", "BLOCKED") or (case and case.status in ("RECOVERED", "STOPPED")):
+                yield {"data": json.dumps({'run_id': run_id, 'event': 'COMPLETE', 'final_result': agent_run.final_result or agent_run.status, 'case_status': case.status if case else 'COMPLETED'})}
+                return
 
             agent_run.status = "RUNNING"
             agent_run.started_at = datetime.now(timezone.utc)
-            case.status = "EXECUTING"
+            if case and case.status != "RECOVERED":
+                case.status = "EXECUTING"
             db.commit()
 
             steps = [
@@ -261,6 +326,10 @@ class ExecutionService:
             action_result = None
 
             for idx, (step_name, description) in enumerate(steps, start=1):
+                # Guard against executing steps for a run/case in terminal state
+                if agent_run.status in ("COMPLETED", "BLOCKED") or (case and case.status in ("RECOVERED", "STOPPED")):
+                    break
+
                 # Emit step start
                 step = AgentRunStep(
                     run_id=run_id,
@@ -324,19 +393,21 @@ class ExecutionService:
                     reason = eval_res["reason"]
                     conf = eval_res["confidence"]
                     agent_run.recommended_action = action
-                    case.recommended_action = action
+                    if case.status != "RECOVERED":
+                        case.recommended_action = action
                     case.agent_confidence = conf
                     output_data = {
                         "action": action,
                         "reason": reason,
                         "confidence": conf,
-                        "llm_used": eval_res.get("llm_used", False),
-                        "model": eval_res.get("model", "mistral-small-latest"),
-                        "risk_assessment": eval_res.get("risk_assessment", "MEDIUM"),
+                        "ml_used": eval_res.get("ml_used", True),
+                        "model": eval_res.get("model", "HistGradientBoostingClassifier"),
+                        "probabilities": eval_res.get("probabilities", {}),
+                        "risk_assessment": eval_res.get("risk_assessment", "LOW"),
                         "supporting_factors": eval_res.get("supporting_factors", [])
                     }
-                    audit_actor = "LLM_AGENT" if eval_res.get("llm_used") else "AGENT"
-                    audit_service.record_event(db, "ACTION_RECOMMENDED", audit_actor, f"Agent proposed {action}: {reason}", case_id=case.id, agent_run_id=run_id)
+                    audit_actor = "ML_MODEL" if eval_res.get("ml_used") else "AGENT"
+                    audit_service.record_event(db, "ACTION_RECOMMENDED", audit_actor, f"ML Model proposed {action} ({conf*100:.1f}% conf): {reason}", case_id=case.id, agent_run_id=run_id)
 
                 elif step_name == "CHECK_GUARDRAILS":
                     action = agent_run.recommended_action or "RETRY"
@@ -349,16 +420,31 @@ class ExecutionService:
                         step.completed_at = datetime.now(timezone.utc)
                         agent_run.status = "BLOCKED"
                         agent_run.error = reason
-                        case.status = "STOPPED"
+                        if case.status != "RECOVERED":
+                            case.status = "STOPPED"
+                            case.closed_at = datetime.now(timezone.utc)
                         db.commit()
                         yield {"data": json.dumps({'run_id': run_id, 'step_name': step_name, 'status': 'BLOCKED', 'output': output_data, 'timestamp': datetime.now(timezone.utc).isoformat()})}
                         break
 
                 elif step_name == "EXECUTE":
                     action = agent_run.recommended_action or "RETRY"
-                    if action == "RETRY":
+                    is_cust_req, act_type, act_desc = policy_engine.classify_customer_action_requirement(
+                        payment.failure_reason if payment else None, case.root_cause
+                    )
+
+                    if is_cust_req and case.customer_action_status != "COMPLETED":
+                        notification_service.send_notification(db, case.id, customer.id if customer else None, "CUSTOMER_ACTION_REQUIRED", agent_run_id=run_id)
+                        action_result = {
+                            "status": "CUSTOMER_ACTION_REQUIRED",
+                            "message": act_desc,
+                            "action_type": act_type
+                        }
+                    elif action == "RETRY":
+                        notification_service.send_notification(db, case.id, customer.id if customer else None, "AUTOMATIC_RETRY_ATTEMPTED", agent_run_id=run_id)
                         action_result = gateway_simulator.process_retry(payment.gateway_payment_id if payment else "pay_test", case.revenue_at_risk, case.retry_count + 1)
                     elif action == "CUSTOMER_NUDGE":
+                        notification_service.send_notification(db, case.id, customer.id if customer else None, "CUSTOMER_NUDGE", agent_run_id=run_id)
                         action_result = gateway_simulator.process_nudge(customer.email if customer else "cust@example.com", case.revenue_at_risk)
                     elif action == "HUMAN_REVIEW":
                         action_result = {"status": "ESCALATED", "message": "Case routed to Human Operations queue."}
@@ -390,8 +476,31 @@ class ExecutionService:
                         payment.status = "SUCCESS"
                         case.status = "RECOVERED"
                         case.closed_at = datetime.now(timezone.utc)
+                        case.recommended_action = action_type
                         case.next_action = "NONE"
+                        case.customer_action_status = "CANCELLED"
                         agent_run.final_result = "RECOVERED"
+                    elif exec_status == "CUSTOMER_ACTION_REQUIRED":
+                        policy = policy_engine.get_active_policy(db)
+                        now = datetime.now(timezone.utc)
+                        case.status = "CUSTOMER_ACTION_REQUIRED"
+                        case.customer_action_required = True
+                        case.customer_action_type = action_result.get("action_type", "OTHER")
+                        case.customer_action_description = action_result.get("message", "Customer action required.")
+                        case.waiting_since = now
+                        case.retry_after = now + timedelta(hours=policy.customer_action_wait_hours)
+                        case.expires_at = now + timedelta(hours=policy.customer_action_expire_hours)
+                        case.customer_action_status = "PENDING"
+                        case.next_action = "WAIT_FOR_CUSTOMER_ACTION"
+                        agent_run.final_result = "CUSTOMER_ACTION_REQUIRED"
+                        audit_service.record_event(
+                            db,
+                            "CUSTOMER_ACTION_REQUIRED",
+                            "SYSTEM",
+                            f"Case entered CUSTOMER_ACTION_REQUIRED state ({case.customer_action_type}): {case.customer_action_description}",
+                            case_id=case.id,
+                            agent_run_id=run_id
+                        )
                     elif exec_status == "ESCALATED":
                         case.status = "ESCALATED"
                         case.next_action = "HUMAN_REVIEW"
@@ -412,8 +521,18 @@ class ExecutionService:
                     output_data = {"new_case_status": case.status, "payment_status": payment.status, "recovered_amount": action_result.get("amount_recovered", 0.0) if action_result else 0.0}
 
                 elif step_name == "NOTIFY":
-                    event_type = "RETRY_SUCCESS" if case.status == "RECOVERED" else ("HUMAN_REVIEW_REQUIRED" if case.status == "ESCALATED" else "RETRY_FAILED")
-                    notification_service.send_notification(db, case.id, customer.id if customer else None, event_type)
+                    if case.status == "RECOVERED":
+                        event_type = "RECOVERY_SUCCESS"
+                    elif case.status == "CUSTOMER_ACTION_REQUIRED":
+                        event_type = "CUSTOMER_ACTION_REQUIRED"
+                    elif case.status == "ESCALATED":
+                        event_type = "HUMAN_REVIEW_REQUIRED"
+                    elif case.status == "STOPPED":
+                        event_type = "RECOVERY_STOPPED"
+                    else:
+                        event_type = "RETRY_FAILED"
+
+                    notification_service.send_notification(db, case.id, customer.id if customer else None, event_type, agent_run_id=run_id)
                     output_data = {"notification_sent": event_type}
 
                 elif step_name == "AUDIT":

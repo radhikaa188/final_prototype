@@ -65,6 +65,13 @@ export const api = {
 
   escalateCase: (caseId: string) => fetchApi<{ case_id: string; status: string }>(`/recovery-cases/${caseId}/escalate`, { method: 'POST' }),
 
+  completeCustomerAction: (caseId: string, actionType?: string) => fetchApi<any>(`/recovery-cases/${caseId}/customer-action`, {
+    method: 'POST',
+    body: JSON.stringify({ action_type: actionType })
+  }),
+
+  reevaluateCase: (caseId: string) => fetchApi<any>(`/recovery-cases/${caseId}/re-evaluate`, { method: 'POST' }),
+
   // Agent Operations
   getAgentRuns: () => fetchApi<{ total: number; runs: any[] }>('/agent/runs'),
 

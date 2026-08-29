@@ -10,6 +10,7 @@ import { CaseDetail } from './pages/CaseDetail';
 import { AgentExecution } from './pages/AgentExecution';
 import { AgentOperations } from './pages/AgentOperations';
 import { HumanReview } from './pages/HumanReview';
+import { CustomerActions } from './pages/CustomerActions';
 import { Customers } from './pages/Customers';
 import { CustomerDetail } from './pages/CustomerDetail';
 import { Payments } from './pages/Payments';
@@ -34,6 +35,7 @@ export const App: React.FC = () => {
               <Route path="/recovery/:caseId" element={<CaseDetail />} />
               <Route path="/recovery/:caseId/run/:runId" element={<AgentExecution />} />
               <Route path="/agent" element={<AgentOperations />} />
+              <Route path="/customer-actions" element={<CustomerActions />} />
               <Route path="/human-review" element={<HumanReview />} />
               <Route path="/customers" element={<Customers />} />
               <Route path="/customers/:id" element={<CustomerDetail />} />

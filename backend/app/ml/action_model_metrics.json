@@ -1,0 +1,101 @@
+{
+  "model_name": "HistGradientBoostingClassifier",
+  "trained_at": "2026-08-29T12:47:00.469833",
+  "dataset_rows": 30000,
+  "train_rows": 24000,
+  "test_rows": 6000,
+  "target_classes": [
+    "RETRY",
+    "CUSTOMER_NUDGE",
+    "HUMAN_REVIEW",
+    "STOP"
+  ],
+  "features_used": [
+    "amount_usd",
+    "attempt_number",
+    "previous_failures",
+    "days_since_last_payment",
+    "historical_success_rate",
+    "customer_tenure_months",
+    "monthly_charge_usd",
+    "support_ticket_count",
+    "customer_lifetime_value_usd",
+    "recovery_probability",
+    "root_cause_confidence",
+    "revenue_at_risk",
+    "expected_recovery",
+    "failure_reason",
+    "gateway_response_code",
+    "payment_method",
+    "root_cause",
+    "customer_opted_out"
+  ],
+  "accuracy": 0.861,
+  "macro_f1": 0.8238,
+  "weighted_f1": 0.8576,
+  "per_class_metrics": {
+    "RETRY": {
+      "precision": 0.9286,
+      "recall": 0.9468,
+      "f1": 0.9376
+    },
+    "CUSTOMER_NUDGE": {
+      "precision": 0.8834,
+      "recall": 0.9607,
+      "f1": 0.9204
+    },
+    "HUMAN_REVIEW": {
+      "precision": 0.7105,
+      "recall": 0.6623,
+      "f1": 0.6856
+    },
+    "STOP": {
+      "precision": 0.8259,
+      "recall": 0.6893,
+      "f1": 0.7515
+    }
+  },
+  "confusion_matrix": [
+    [
+      2029,
+      21,
+      88,
+      5
+    ],
+    [
+      10,
+      1810,
+      59,
+      5
+    ],
+    [
+      127,
+      187,
+      810,
+      99
+    ],
+    [
+      19,
+      31,
+      183,
+      517
+    ]
+  ],
+  "all_model_evaluations": {
+    "RandomForestClassifier": {
+      "accuracy": 0.8583,
+      "macro_f1": 0.8184,
+      "weighted_f1": 0.8525
+    },
+    "HistGradientBoostingClassifier": {
+      "accuracy": 0.861,
+      "macro_f1": 0.8238,
+      "weighted_f1": 0.8576
+    },
+    "LogisticRegression": {
+      "accuracy": 0.852,
+      "macro_f1": 0.8088,
+      "weighted_f1": 0.8477
+    }
+  }
+}

@@ -14,12 +14,38 @@ class PolicyEngine:
                 recovery_window_hours=72,
                 max_auto_retry_amount=10000.0,
                 customer_opt_out_enabled=True,
-                duplicate_action_protection=True
+                duplicate_action_protection=True,
+                customer_action_wait_hours=24,
+                customer_action_expire_hours=72
             )
             db.add(policy)
             db.commit()
             db.refresh(policy)
         return policy
+
+    @staticmethod
+    def classify_customer_action_requirement(failure_reason: str, root_cause: str = None) -> Tuple[bool, str, str]:
+        """
+        Classifies payment decline telemetry to determine if customer intervention is required.
+        Returns: (customer_action_required: bool, customer_action_type: str, customer_action_description: str)
+        """
+        reason_upper = str(failure_reason or "").upper()
+        root_upper = str(root_cause or "").upper()
+
+        if "INSUFFICIENT" in reason_upper or "FUNDS" in reason_upper:
+            return True, "ADD_FUNDS", "Customer needs to add sufficient funds to their account before payment retry."
+        elif "EXPIRED" in reason_upper or "CARD_EXPIRED" in reason_upper:
+            return True, "UPDATE_CARD", "Customer needs to update card expiration date or issue a new card."
+        elif "INVALID_CARD" in reason_upper or "DO_NOT_HONOR" in reason_upper or ("DECLINED" in reason_upper and root_upper == "CUSTOMER_ACTION"):
+            return True, "UPDATE_PAYMENT_METHOD", "Customer needs to update billing method or select another payment card."
+        elif "AUTH" in reason_upper or "3DS" in reason_upper or "AUTHENTICATION" in reason_upper:
+            return True, "COMPLETE_AUTHENTICATION", "Customer needs to complete 3D-Secure authentication."
+        elif "MANDATE" in reason_upper or "AUTHORIZATION" in reason_upper:
+            return True, "AUTHORIZE_MANDATE", "Customer needs to re-authorize payment e-mandate."
+        elif root_upper == "CUSTOMER_ACTION":
+            return True, "OTHER", "Customer action required to resolve payment decline."
+
+        return False, "NONE", "No customer action required."
 
     @staticmethod
     def validate_action(

@@ -31,13 +31,23 @@ def get_dashboard_summary(db: Session = Depends(get_db)):
 
     total_cases = db.query(RecoveryCase).count()
 
+    # Customer Action Metrics
+    cust_actions_pending = db.query(RecoveryCase).filter(RecoveryCase.status == "CUSTOMER_ACTION_REQUIRED", RecoveryCase.customer_action_status == "PENDING").count()
+    cust_actions_completed = db.query(RecoveryCase).filter(RecoveryCase.customer_action_status == "COMPLETED").count()
+    cust_actions_expired = db.query(RecoveryCase).filter(RecoveryCase.customer_action_status == "EXPIRED").count()
+    cust_actions_recovered = db.query(RecoveryCase).filter(RecoveryCase.customer_action_required == True, RecoveryCase.status == "RECOVERED").count()
+
     return {
         "revenue_at_risk": round(revenue_at_risk, 2),
         "recoverable_revenue": round(recoverable_revenue, 2),
         "revenue_recovered": round(revenue_recovered, 2),
         "recovery_rate": round(recovery_rate, 4),
         "active_cases": active_cases,
-        "total_cases": total_cases
+        "total_cases": total_cases,
+        "customer_actions_pending": cust_actions_pending,
+        "customer_actions_completed": cust_actions_completed,
+        "customer_actions_expired": cust_actions_expired,
+        "customer_actions_recovered": cust_actions_recovered
     }
 
 @router.get("/revenue")
@@ -83,7 +93,7 @@ def get_dashboard_funnel(db: Session = Depends(get_db)):
         {"stage": "Recovery Cases", "count": total_cases, "color": "#f59e0b"},
         {"stage": "Eligible Cases", "count": eligible, "color": "#3b82f6"},
         {"stage": "Actions Executed", "count": actioned, "color": "#8b5cf6"},
-        {"stage": "Revenue Recovered", "count": recovered, "color": "#10b981"}
+        {"stage": "Recovered Cases", "count": recovered, "color": "#10b981"}
     ]
 
 @router.get("/activity")

@@ -63,6 +63,17 @@ class RecoveryCase(Base):
     agent_confidence = Column(Float, default=0.0)
     retry_count = Column(Integer, default=0)
     next_action = Column(String, nullable=True)
+
+    # Customer Action Required & Lifecycle Metadata
+    customer_action_required = Column(Boolean, default=False)
+    customer_action_type = Column(String, nullable=True)  # ADD_FUNDS, UPDATE_CARD, UPDATE_PAYMENT_METHOD, COMPLETE_AUTHENTICATION, AUTHORIZE_MANDATE, OTHER
+    customer_action_description = Column(Text, nullable=True)
+    customer_notified_at = Column(DateTime, nullable=True)
+    waiting_since = Column(DateTime, nullable=True)
+    retry_after = Column(DateTime, nullable=True)
+    expires_at = Column(DateTime, nullable=True)
+    customer_action_status = Column(String, nullable=True)  # PENDING, COMPLETED, EXPIRED, CANCELLED
+
     created_at = Column(DateTime, default=utc_now)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
     closed_at = Column(DateTime, nullable=True)
@@ -169,6 +180,8 @@ class Policy(Base):
     max_auto_retry_amount = Column(Float, default=10000.0)
     customer_opt_out_enabled = Column(Boolean, default=True)
     duplicate_action_protection = Column(Boolean, default=True)
+    customer_action_wait_hours = Column(Integer, default=24)
+    customer_action_expire_hours = Column(Integer, default=72)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
 

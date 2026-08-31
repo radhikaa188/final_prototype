@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from app.db.session import get_db
-from app.db.models import Notification, Customer
+from app.db.models import Notification, Customer, User
+from app.auth.dependencies import get_current_user
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
@@ -9,7 +10,8 @@ router = APIRouter(prefix="/notifications", tags=["notifications"])
 def list_notifications(
     limit: int = Query(50),
     offset: int = Query(0),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     query = db.query(Notification)
     total = query.count()

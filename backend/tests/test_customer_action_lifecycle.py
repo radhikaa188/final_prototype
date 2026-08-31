@@ -404,3 +404,87 @@ def test_scenario_10_human_approval_followed_by_successful_retry(db):
     assert pay.status == "SUCCESS"
     assert case.status == "RECOVERED"
     assert case.next_action == "NONE"
+
+
+def test_scenario_11_reevaluation_timing_and_simulation_workflow(db):
+    """Scenario 11: Simulated Fix and Manual Re-evaluation Timing/Workflow validation."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.auth.security import create_access_token
+    from app.db.models import User
+    from app.auth.init_users import seed_default_users
+
+    seed_default_users(db)
+    ops_user = db.query(User).filter(User.role == "OPS").first()
+    token = create_access_token({"sub": ops_user.id, "email": ops_user.email, "role": ops_user.role})
+
+    client = TestClient(app)
+    client.headers["Authorization"] = f"Bearer {token}"
+
+    uid = uuid.uuid4().hex[:8]
+    cust = Customer(external_customer_id=f"ext_c11_{uid}", name="Test Customer 11", email=f"cust11_{uid}@example.com", opted_out=False)
+    db.add(cust)
+    db.commit()
+
+    pay = Payment(customer_id=cust.id, gateway_payment_id=f"pay_test_s11_{uid}", amount=100.0, status="FAILED", failure_reason="INSUFFICIENT_FUNDS")
+    db.add(pay)
+    db.commit()
+
+    now = datetime.now(timezone.utc)
+    case = RecoveryCase(
+        payment_id=pay.id,
+        customer_id=cust.id,
+        status="CUSTOMER_ACTION_REQUIRED",
+        revenue_at_risk=100.0,
+        customer_action_required=True,
+        customer_action_type="ADD_FUNDS",
+        customer_action_status="PENDING",
+        waiting_since=now,
+        retry_after=now + timedelta(hours=24),  # scheduled in 24 hours
+        expires_at=now + timedelta(hours=72)
+    )
+    db.add(case)
+    db.commit()
+
+    # Step 1: Simulate customer action
+    response = client.post(f"/api/recovery-cases/{case.id}/customer-action", json={"action_type": "ADD_FUNDS"})
+    assert response.status_code == 200
+    db.refresh(case)
+    db.refresh(pay)
+    assert case.customer_action_status == "COMPLETED"
+    assert pay.status == "FAILED"
+    assert case.status == "CUSTOMER_ACTION_REQUIRED"
+
+    # Step 2: Try to re-evaluate early -> must reject (HTTP 400)
+    response = client.post(f"/api/recovery-cases/{case.id}/re-evaluate")
+    assert response.status_code == 400
+    assert "Re-evaluation is not due yet" in response.json()["detail"]
+
+    # Step 3: Fast-forward retry_after to past
+    case.retry_after = now - timedelta(hours=1)
+    db.commit()
+
+    # Step 4: Re-evaluate when due -> must succeed
+    response = client.post(f"/api/recovery-cases/{case.id}/re-evaluate")
+    assert response.status_code == 200
+    db.refresh(case)
+    db.refresh(pay)
+
+    # Forced success via pay_test prefix
+    assert pay.status == "SUCCESS"
+    assert case.status == "RECOVERED"
+
+    # Step 5: Verify timeline audit events
+    events = db.query(AuditEvent).filter(AuditEvent.case_id == case.id).order_by(AuditEvent.created_at.asc()).all()
+    event_types = [e.event_type for e in events]
+    
+    assert "SIMULATION_TRIGGERED" in event_types
+    assert "RE-EVALUATION STARTED" in event_types
+    assert "CURRENT_CONDITION_CHECKED" in event_types
+    assert "RECOVERY_PROBABILITY_CALCULATED" in event_types
+    assert "ACTION_SELECTED" in event_types
+    assert "POLICY_GUARDRAILS_VALIDATED" in event_types
+    assert "RECOVERY_ACTION_EXECUTED" in event_types
+    assert "PAYMENT_RESULT_RECEIVED" in event_types
+    assert "RECOVERED" in event_types
+

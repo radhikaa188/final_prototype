@@ -7,11 +7,10 @@ import {
   AlertCircle,
   RefreshCw,
   Zap,
-  ArrowRight,
   ShieldAlert,
-  Send,
-  Bell,
-  Mail
+  Mail,
+  FlaskConical,
+  Activity
 } from 'lucide-react';
 import { api } from '../api/client';
 import { MetricCard } from '../components/common/MetricCard';
@@ -25,6 +24,8 @@ export const CustomerActions: React.FC = () => {
   const [detail, setDetail] = useState<any>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [nowTime, setNowTime] = useState<Date>(new Date());
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   const loadData = async () => {
     try {
@@ -48,6 +49,10 @@ export const CustomerActions: React.FC = () => {
 
   useEffect(() => {
     loadData();
+    const interval = setInterval(() => {
+      setNowTime(new Date());
+    }, 1000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -57,6 +62,7 @@ export const CustomerActions: React.FC = () => {
         setDetailLoading(true);
         const data = await api.getRecoveryCase(selectedCaseId!);
         setDetail(data);
+        setActionMessage(null);
       } catch (err) {
         console.error('Failed to load case detail:', err);
       } finally {
@@ -70,13 +76,15 @@ export const CustomerActions: React.FC = () => {
     if (!selectedCaseId) return;
     try {
       setActionLoading(true);
-      await api.completeCustomerAction(selectedCaseId);
+      setActionMessage(null);
+      const res = await api.completeCustomerAction(selectedCaseId);
+      setActionMessage(res.message || 'Underlying issue marked as resolved. Payment remains FAILED until agent re-evaluation.');
       await loadData();
       const updated = await api.getRecoveryCase(selectedCaseId);
       setDetail(updated);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to simulate customer action:', err);
-      alert('Failed to simulate customer action. Check console logs.');
+      setActionMessage(`Error: ${err.message || 'Failed to simulate action'}`);
     } finally {
       setActionLoading(false);
     }
@@ -86,13 +94,19 @@ export const CustomerActions: React.FC = () => {
     if (!selectedCaseId) return;
     try {
       setActionLoading(true);
-      await api.reevaluateCase(selectedCaseId);
+      setActionMessage(null);
+      const res = await api.reevaluateCase(selectedCaseId);
+      if (res.case_status === 'RECOVERED') {
+        setActionMessage('Re-evaluation complete! Agent executed retry and captured payment successfully (RECOVERED).');
+      } else {
+        setActionMessage(`Re-evaluation complete. Case status: ${res.case_status}`);
+      }
       await loadData();
       const updated = await api.getRecoveryCase(selectedCaseId);
       setDetail(updated);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to re-evaluate case:', err);
-      alert('Failed to re-evaluate case.');
+      setActionMessage(`Re-evaluation blocked: ${err.message || 'Failed to re-evaluate'}`);
     } finally {
       setActionLoading(false);
     }
@@ -111,6 +125,44 @@ export const CustomerActions: React.FC = () => {
 
   const actionInfo = detail?.customer_action_info || {};
   const isOptedOut = detail?.customer?.opted_out;
+
+  // Re-evaluation timing calculation
+  const retryAfterDate = actionInfo.retry_after ? new Date(actionInfo.retry_after) : null;
+  const isReevaluateDue = detail?.status !== 'RECOVERED' && !!retryAfterDate && nowTime >= retryAfterDate;
+  const isActionCompleted = actionInfo.status === 'COMPLETED';
+
+  const formatLocalTime = (isoString: string | null) => {
+    if (!isoString) return 'N/A';
+    try {
+      const d = new Date(isoString);
+      return d.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: 'numeric',
+        hour12: true
+      });
+    } catch (e) {
+      return String(isoString);
+    }
+  };
+
+  const getCountdownString = () => {
+    if (!retryAfterDate) return 'No scheduled re-evaluation';
+    const diffMs = retryAfterDate.getTime() - nowTime.getTime();
+    if (diffMs <= 0) return 'Re-evaluation due';
+
+    const hours = Math.floor(diffMs / (1000 * 60 * 60));
+    const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    
+    if (hours > 0) {
+      return `~${hours}h ${mins}m`;
+    } else {
+      const secs = Math.floor((diffMs % (1000 * 60)) / 1000);
+      return `~${mins}m ${secs}s`;
+    }
+  };
 
   return (
     <div className="p-8 space-y-8 max-w-7xl mx-auto">
@@ -148,7 +200,7 @@ export const CustomerActions: React.FC = () => {
         <MetricCard
           title="Completed Customer Actions"
           value={summary?.customer_actions_completed || 0}
-          subtitle="Fixed & Re-evaluated"
+          subtitle="Fixed & Awaiting Re-evaluation"
           icon={<CheckCircle2 className="w-4 h-4 text-emerald-500" />}
           color="emerald"
         />
@@ -256,10 +308,10 @@ export const CustomerActions: React.FC = () => {
                   Payment Failure Context
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-[11px]">
+                  <div><span className="text-slate-400">Payment Status:</span> <span className={`font-mono font-bold ${detail.payment?.status === 'SUCCESS' ? 'text-emerald-600' : 'text-rose-600'}`}>{detail.payment?.status || 'FAILED'}</span></div>
                   <div><span className="text-slate-400">Amount:</span> <span className="font-mono font-bold">${detail.payment?.amount}</span></div>
                   <div><span className="text-slate-400">Reason:</span> <span className="font-semibold text-rose-600">{detail.payment?.failure_reason}</span></div>
                   <div><span className="text-slate-400">Attempt:</span> <span className="font-mono">#{detail.payment?.attempt_number}</span></div>
-                  <div><span className="text-slate-400">Root Cause:</span> <span className="font-mono">{detail.ml_intelligence?.root_cause}</span></div>
                 </div>
               </div>
 
@@ -277,6 +329,12 @@ export const CustomerActions: React.FC = () => {
                 <p className="text-xs text-purple-950 font-medium">
                   {actionInfo.description || 'Customer must add sufficient funds to their billing account.'}
                 </p>
+                <div className="pt-1 flex items-center justify-between text-[11px] font-mono">
+                  <span className="text-slate-500">Underlying Issue Status:</span>
+                  <span className={`font-bold ${isActionCompleted ? 'text-emerald-700' : 'text-amber-700'}`}>
+                    {isActionCompleted ? '✓ RESOLVED (COMPLETED)' : '⏳ PENDING CUSTOMER FIX'}
+                  </span>
+                </div>
               </div>
 
               {/* Notification Status */}
@@ -304,35 +362,57 @@ export const CustomerActions: React.FC = () => {
                 )}
               </div>
 
-              {/* Lifecycle Timeline */}
+              {/* Re-evaluation Timing & Countdown */}
               <div className="space-y-2 text-xs">
                 <span className="font-bold text-slate-800 flex items-center gap-1.5">
                   <Clock className="w-3.5 h-3.5 text-amber-500" />
-                  Waiting Lifecycle Windows
+                  Re-evaluation Window & Countdown
                 </span>
                 <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5 font-mono text-[11px]">
                   <div className="flex justify-between">
                     <span className="text-slate-500">Waiting Since:</span>
-                    <span className="font-bold text-slate-800">{actionInfo.waiting_since ? new Date(actionInfo.waiting_since).toLocaleString() : 'N/A'}</span>
+                    <span className="font-bold text-slate-800">{formatLocalTime(actionInfo.waiting_since)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-500">Next Re-evaluation:</span>
-                    <span className="font-bold text-purple-700">{actionInfo.retry_after ? new Date(actionInfo.retry_after).toLocaleString() : '24h window'}</span>
+                    <span className="font-bold text-purple-700">{formatLocalTime(actionInfo.retry_after)}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Window Expires:</span>
-                    <span className="font-bold text-rose-600">{actionInfo.expires_at ? new Date(actionInfo.expires_at).toLocaleString() : '72h limit'}</span>
+                  <div className="flex justify-between border-t border-slate-200 pt-1.5">
+                    <span className="text-slate-500">Re-evaluation Availability:</span>
+                    <span className={`font-bold ${isReevaluateDue ? 'text-emerald-600' : 'text-amber-600'}`}>
+                      {getCountdownString()}
+                    </span>
                   </div>
                 </div>
               </div>
 
+              {/* Test Mode Callout Banner */}
+              <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl space-y-1.5 text-xs">
+                <div className="font-bold text-amber-900 flex items-center gap-1.5 uppercase tracking-wider text-[10px]">
+                  <FlaskConical className="w-4 h-4 text-amber-600" />
+                  Test Mode: Simulate Fix
+                </div>
+                <p className="text-[11px] text-amber-800 leading-relaxed font-medium">
+                  This simulates the customer resolving the underlying payment issue. It does not recover the payment. The payment remains <strong>FAILED</strong> until the scheduled re-evaluation occurs and the recovery agent executes a successful recovery action.
+                </p>
+              </div>
+
+              {/* Action Feedback Message */}
+              {actionMessage && (
+                <div className={`p-2.5 rounded-lg text-xs font-mono ${actionMessage.startsWith('Error') || actionMessage.startsWith('Re-evaluation blocked') ? 'bg-rose-50 text-rose-800 border border-rose-200' : 'bg-blue-50 text-blue-800 border border-blue-200'}`}>
+                  {actionMessage}
+                </div>
+              )}
+
               {/* Test Mode Interactive Actions */}
               <div className="pt-2 border-t border-slate-100 space-y-2">
-                <span className="text-[10px] font-mono text-slate-400 font-bold uppercase block">Test Mode Simulation Controls</span>
+                <span className="text-[10px] font-mono text-amber-600 font-bold uppercase block tracking-wider flex items-center gap-1">
+                  <FlaskConical className="w-3.5 h-3.5" /> Test Mode Simulation Controls
+                </span>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={handleSimulateCustomerAction}
-                    disabled={actionLoading || detail.status === 'RECOVERED'}
+                    disabled={actionLoading || detail.status === 'RECOVERED' || isActionCompleted}
                     className="btn-primary text-xs flex items-center justify-center gap-1.5 py-2.5 disabled:opacity-50"
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" />
@@ -340,12 +420,42 @@ export const CustomerActions: React.FC = () => {
                   </button>
                   <button
                     onClick={handleReevaluateNow}
-                    disabled={actionLoading || detail.status === 'RECOVERED'}
-                    className="btn-outline text-xs flex items-center justify-center gap-1.5 py-2.5 text-purple-700 border-purple-200 hover:bg-purple-50 disabled:opacity-50"
+                    disabled={actionLoading || detail.status === 'RECOVERED' || !isReevaluateDue}
+                    className={`text-xs flex items-center justify-center gap-1.5 py-2.5 rounded-xl font-bold transition-all ${
+                      isReevaluateDue && detail.status !== 'RECOVERED'
+                        ? 'bg-purple-600 text-white shadow-sm hover:bg-purple-700'
+                        : 'btn-outline text-slate-400 border-slate-200 cursor-not-allowed opacity-50'
+                    }`}
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${actionLoading ? 'animate-spin' : ''}`} />
                     Re-evaluate
                   </button>
+                </div>
+              </div>
+
+              {/* Agent Activity Timeline */}
+              <div className="space-y-2 border-t border-slate-100 pt-4">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Activity className="w-3.5 h-3.5 text-purple-600" />
+                  Agent Execution & Audit Timeline
+                </span>
+                <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
+                  {detail.timeline && detail.timeline.length > 0 ? (
+                    detail.timeline
+                      .slice()
+                      .sort((a: any, b: any) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+                      .map((evt: any) => (
+                        <div key={evt.id} className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] space-y-0.5">
+                          <div className="flex items-center justify-between font-mono">
+                            <span className="font-bold text-purple-700">{evt.event}</span>
+                            <span className="text-[10px] text-slate-400">{evt.timestamp ? new Date(evt.timestamp).toLocaleTimeString() : ''}</span>
+                          </div>
+                          <p className="text-slate-600 leading-tight">{evt.description}</p>
+                        </div>
+                      ))
+                  ) : (
+                    <div className="text-[11px] text-slate-400 text-center py-4 font-mono">No audit events logged yet.</div>
+                  )}
                 </div>
               </div>
             </>

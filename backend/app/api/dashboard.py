@@ -2,12 +2,13 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.db.session import get_db
-from app.db.models import Payment, RecoveryCase, RecoveryAction, AgentRun, AuditEvent
+from app.db.models import Payment, RecoveryCase, RecoveryAction, AgentRun, AuditEvent, User
+from app.auth.dependencies import get_current_user
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 @router.get("/summary")
-def get_dashboard_summary(db: Session = Depends(get_db)):
+def get_dashboard_summary(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     # Revenue at Risk = sum of failed payment amounts
     revenue_at_risk = db.query(func.sum(RecoveryCase.revenue_at_risk)).scalar() or 0.0
     
@@ -51,7 +52,7 @@ def get_dashboard_summary(db: Session = Depends(get_db)):
     }
 
 @router.get("/revenue")
-def get_revenue_timeline(db: Session = Depends(get_db)):
+def get_revenue_timeline(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     # Aggregated breakdown by date
     cases = db.query(RecoveryCase).all()
     # Group by date string (YYYY-MM-DD)
@@ -81,23 +82,36 @@ def get_revenue_timeline(db: Session = Depends(get_db)):
     return sorted_timeline
 
 @router.get("/funnel")
-def get_dashboard_funnel(db: Session = Depends(get_db)):
-    total_failed = db.query(Payment).filter(Payment.status == "FAILED").count()
+def get_dashboard_funnel(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Stage 1: All payments that ever failed and entered recovery (including later recovered payments)
+    total_failed_ingested = db.query(Payment).filter(
+        (Payment.status == "FAILED") | (Payment.id.in_(db.query(RecoveryCase.payment_id)))
+    ).count()
+
+    # Stage 2: Total Recovery Cases created
     total_cases = db.query(RecoveryCase).count()
+
+    # Stage 3: Eligible Cases (active non-stopped cases)
     eligible = db.query(RecoveryCase).filter(RecoveryCase.status != "STOPPED").count()
-    actioned = db.query(RecoveryAction).count()
+
+    # Stage 4: Distinct recovery cases with an attempted recovery action
+    actioned_cases = db.query(func.count(func.distinct(RecoveryAction.case_id))).filter(
+        RecoveryAction.case_id.isnot(None)
+    ).scalar() or 0
+
+    # Stage 5: Terminal successfully recovered cases
     recovered = db.query(RecoveryCase).filter(RecoveryCase.status == "RECOVERED").count()
 
     return [
-        {"stage": "Failed Payments", "count": total_failed, "color": "#ef4444"},
+        {"stage": "Failed Payments", "count": total_failed_ingested, "color": "#ef4444"},
         {"stage": "Recovery Cases", "count": total_cases, "color": "#f59e0b"},
         {"stage": "Eligible Cases", "count": eligible, "color": "#3b82f6"},
-        {"stage": "Actions Executed", "count": actioned, "color": "#8b5cf6"},
+        {"stage": "Actioned Cases", "count": actioned_cases, "color": "#8b5cf6"},
         {"stage": "Recovered Cases", "count": recovered, "color": "#10b981"}
     ]
 
 @router.get("/activity")
-def get_dashboard_activity(db: Session = Depends(get_db)):
+def get_dashboard_activity(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     events = db.query(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(10).all()
     res = []
     for ev in events:

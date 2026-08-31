@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.db.session import get_db
-from app.db.models import RecoveryCase, Payment, RecoveryAction, AgentRun, AuditEvent
+from app.db.models import RecoveryCase, Payment, RecoveryAction, AgentRun, AuditEvent, User
+from app.auth.dependencies import get_current_user
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -20,30 +21,40 @@ def get_analytics_summary(db: Session = Depends(get_db)):
     return {
         "total_cases": total_cases,
         "recovered_cases": recovered_cases,
-        "recovery_rate": round(recovered_cases / total_cases, 4) if total_cases > 0 else 0.0,
+        "recovery_rate": round(total_recovered / total_at_risk, 4) if total_at_risk > 0 else 0.0,
         "total_at_risk": round(total_at_risk, 2),
         "total_recovered": round(total_recovered, 2)
     }
 
 @router.get("/failure-reasons")
-def get_revenue_by_failure_reason(db: Session = Depends(get_db)):
+def get_revenue_by_failure_reason(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     results = db.query(
         RecoveryCase.root_cause,
         func.count(RecoveryCase.id).label("case_count"),
         func.sum(RecoveryCase.revenue_at_risk).label("revenue_at_risk")
     ).group_by(RecoveryCase.root_cause).all()
 
-    res = []
+    grouped = {}
     for cause, count, rev in results:
+        cause_key = cause or "OTHER"
+        if cause_key == "":
+            cause_key = "OTHER"
+        if cause_key not in grouped:
+            grouped[cause_key] = {"count": 0, "revenue": 0.0}
+        grouped[cause_key]["count"] += count
+        grouped[cause_key]["revenue"] += rev or 0.0
+
+    res = []
+    for cause_key, val in grouped.items():
         res.append({
-            "root_cause": cause or "OTHER",
-            "count": count,
-            "revenue": round(rev or 0.0, 2)
+            "root_cause": cause_key,
+            "count": val["count"],
+            "revenue": round(val["revenue"], 2)
         })
     return res
 
 @router.get("/actions")
-def get_revenue_by_action_type(db: Session = Depends(get_db)):
+def get_revenue_by_action_type(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     results = db.query(
         RecoveryAction.action_type,
         func.count(RecoveryAction.id).label("total_attempts"),
@@ -60,7 +71,7 @@ def get_revenue_by_action_type(db: Session = Depends(get_db)):
     return res
 
 @router.get("/ml-metrics")
-def get_ml_performance_metrics(db: Session = Depends(get_db)):
+def get_ml_performance_metrics(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """
     Returns genuine ML model evaluation metrics loaded from ml_metrics.json artifact.
     NO hardcoded metric numbers!

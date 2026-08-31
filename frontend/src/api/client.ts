@@ -1,12 +1,37 @@
 export const API_BASE = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : '/api';
 
+export interface UserProfile {
+  id: string;
+  email: string;
+  name: string | null;
+  role: 'ADMIN' | 'OPS' | 'VIEWER';
+  is_active: boolean;
+}
+
+export interface LoginResponse {
+  access_token: string;
+  token_type: string;
+  user: UserProfile;
+}
+
 export async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  const token = localStorage.getItem('recoverai_token');
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-cache',
+    'Pragma': 'no-cache',
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   const res = await fetch(`${API_BASE}${endpoint}`, {
+    ...options,
     headers: {
-      'Content-Type': 'application/json',
+      ...headers,
       ...options?.headers,
     },
-    ...options,
   });
 
   const contentType = res.headers.get('content-type') || '';
@@ -17,6 +42,14 @@ export async function fetchApi<T>(endpoint: string, options?: RequestInit): Prom
       const errorData = await res.json().catch(() => ({ detail: 'An error occurred' }));
       errorDetail = errorData.detail || errorDetail;
     }
+    
+    // Auto-logout on 401 Unauthorized (unless logging in)
+    if (res.status === 401 && !endpoint.includes('/auth/login')) {
+      localStorage.removeItem('recoverai_token');
+      localStorage.removeItem('recoverai_user');
+      window.dispatchEvent(new CustomEvent('recoverai:unauthorized'));
+    }
+
     throw new Error(errorDetail);
   }
 
@@ -28,6 +61,17 @@ export async function fetchApi<T>(endpoint: string, options?: RequestInit): Prom
 }
 
 export const api = {
+  // Authentication
+  login: (credentials: { email: string; password: string }) =>
+    fetchApi<LoginResponse>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(credentials),
+    }),
+
+  getMe: () => fetchApi<UserProfile>('/auth/me'),
+
+  logout: () => fetchApi<{ status: string; message: string }>('/auth/logout', { method: 'POST' }),
+
   // Dashboard
   getDashboardSummary: () => fetchApi<{
     revenue_at_risk: number;
@@ -57,7 +101,10 @@ export const api = {
 
   getRecoveryCase: (caseId: string) => fetchApi<any>(`/recovery-cases/${caseId}`),
 
-  approveCase: (caseId: string) => fetchApi<{ run_id: string; case_id: string; status: string }>(`/recovery-cases/${caseId}/approve`, { method: 'POST' }),
+  approveCase: (caseId: string, action?: string) => fetchApi<any>(`/recovery-cases/${caseId}/approve`, {
+    method: 'POST',
+    body: action ? JSON.stringify({ action }) : undefined
+  }),
 
   executeCase: (caseId: string) => fetchApi<{ run_id: string; case_id: string; status: string }>(`/recovery-cases/${caseId}/execute`, { method: 'POST' }),
 
@@ -71,6 +118,11 @@ export const api = {
   }),
 
   reevaluateCase: (caseId: string) => fetchApi<any>(`/recovery-cases/${caseId}/re-evaluate`, { method: 'POST' }),
+
+  runWhatIf: (caseId: string, overrides: any) => fetchApi<any>(`/recovery-cases/${caseId}/what-if`, {
+    method: 'POST',
+    body: JSON.stringify({ overrides })
+  }),
 
   // Agent Operations
   getAgentRuns: () => fetchApi<{ total: number; runs: any[] }>('/agent/runs'),

@@ -1,12 +1,16 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.db.session import engine, Base
+from app.db.session import engine, Base, SessionLocal
 from app.db import models
+from app.auth.init_users import seed_default_users
 
-# Ensure tables exist
+# Ensure tables exist and seed demo users
 Base.metadata.create_all(bind=engine)
+with SessionLocal() as db_session:
+    seed_default_users(db_session)
 
+from app.api.auth import router as auth_router
 from app.api.dashboard import router as dashboard_router
 from app.api.payments import router as payments_router
 from app.api.customers import router as customers_router
@@ -34,6 +38,7 @@ app.add_middleware(
 )
 
 # Register routers under /api
+app.include_router(auth_router, prefix=settings.API_V1_STR)
 app.include_router(dashboard_router, prefix=settings.API_V1_STR)
 app.include_router(payments_router, prefix=settings.API_V1_STR)
 app.include_router(customers_router, prefix=settings.API_V1_STR)

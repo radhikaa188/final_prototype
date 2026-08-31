@@ -3,7 +3,7 @@ import json
 import numpy as np
 import pandas as pd
 import joblib
-from datetime import datetime
+from datetime import datetime, timezone
 from sklearn.model_selection import train_test_split
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
@@ -170,7 +170,7 @@ def train_and_evaluate_action_model():
     # Save Metrics JSON Metadata
     metrics_payload = {
         "model_name": best_model_name,
-        "trained_at": datetime.now().isoformat(),
+        "trained_at": datetime.now(timezone.utc).isoformat(),
         "dataset_rows": len(df),
         "train_rows": len(train_df),
         "test_rows": len(test_df),

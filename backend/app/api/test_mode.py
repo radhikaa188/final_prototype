@@ -7,6 +7,8 @@ from fastapi import APIRouter, Depends, Body
 from sqlalchemy.orm import Session
 from app.config import settings
 from app.db.session import get_db
+from app.db.models import User
+from app.auth.dependencies import require_role
 from app.services.webhook_service import webhook_service
 
 router = APIRouter(prefix="/test-mode", tags=["test-mode"])
@@ -69,7 +71,8 @@ def _generate_signed_webhook_payload(
 @router.post("/generate-payment")
 def generate_test_payment(
     payload: Optional[Dict[str, Any]] = Body(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["OPS", "ADMIN"]))
 ):
     """
     Simulates incoming payment failure event by routing through the Webhook Processing Service.
@@ -101,7 +104,8 @@ def send_webhook_test(
     failure_reason: Optional[str] = "INSUFFICIENT_FUNDS",
     custom_event_id: Optional[str] = None,
     corrupt_signature: bool = False,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["OPS", "ADMIN"]))
 ):
     """
     Test Mode Helper to dispatch signed simulated Razorpay Webhook events.

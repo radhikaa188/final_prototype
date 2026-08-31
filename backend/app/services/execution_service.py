@@ -90,7 +90,7 @@ class ExecutionService:
                     case.root_cause_confidence = conf
                     step.output_summary = json.dumps({"root_cause": cause, "confidence": conf})
                     step.status = "SUCCESS"
-                    audit_service.record_event(db, "DIAGNOSIS_COMPLETED", "ML", f"Diagnosed root cause: {cause} (conf: {conf*100:.0f}%)", case_id=case.id, agent_run_id=run_id)
+                    audit_service.record_event(db, "CURRENT_CONDITION_CHECKED", "ML", f"Current condition checked: diagnosed root cause {cause} (confidence: {conf*100:.0f}%)", case_id=case.id, agent_run_id=run_id)
 
                 elif step_name == "PREDICT_RECOVERY":
                     prob = predictor.predict_recovery_probability(
@@ -105,6 +105,7 @@ class ExecutionService:
                     case.priority_score = case.expected_recovery
                     step.output_summary = json.dumps({"recovery_probability": prob, "expected_recovery": case.expected_recovery})
                     step.status = "SUCCESS"
+                    audit_service.record_event(db, "RECOVERY_PROBABILITY_CALCULATED", "ML", f"Recovery probability calculated: P(Recovery) = {prob*100:.0f}%, Expected Recovery = ${case.expected_recovery:.2f}", case_id=case.id, agent_run_id=run_id)
 
                 elif step_name == "REVIEW_HISTORY":
                     prior_actions = db.query(RecoveryAction).filter(RecoveryAction.case_id == case.id).all()
@@ -113,10 +114,16 @@ class ExecutionService:
 
                 elif step_name == "SELECT_ACTION":
                     eval_res = recovery_agent.evaluate_case_full(db, case)
-                    action = eval_res["recommended_action"]
-                    reason = eval_res["reason"]
-                    conf = eval_res["confidence"]
-                    agent_run.recommended_action = action
+                    if agent_run.trigger_type in ("MANUAL_APPROVE", "MANUAL_EXECUTE") and agent_run.recommended_action:
+                        action = agent_run.recommended_action
+                        reason = f"Action '{action}' approved manually by employee (Ops User). Original ML recommendation: {eval_res['recommended_action']}."
+                        conf = 1.0
+                    else:
+                        action = eval_res["recommended_action"]
+                        reason = eval_res["reason"]
+                        conf = eval_res["confidence"]
+                        agent_run.recommended_action = action
+
                     if case.status != "RECOVERED":
                         case.recommended_action = action
                     case.agent_confidence = conf
@@ -124,15 +131,14 @@ class ExecutionService:
                         "action": action,
                         "reason": reason,
                         "confidence": conf,
-                        "ml_used": eval_res.get("ml_used", True),
+                        "ml_used": False if agent_run.trigger_type in ("MANUAL_APPROVE", "MANUAL_EXECUTE") else eval_res.get("ml_used", True),
                         "model": eval_res.get("model", "HistGradientBoostingClassifier"),
                         "probabilities": eval_res.get("probabilities", {}),
                         "risk_assessment": eval_res.get("risk_assessment", "LOW"),
                         "supporting_factors": eval_res.get("supporting_factors", [])
                     })
                     step.status = "SUCCESS"
-                    audit_actor = "ML_MODEL" if eval_res.get("ml_used") else "AGENT"
-                    audit_service.record_event(db, "ACTION_RECOMMENDED", audit_actor, f"ML Model proposed {action} ({conf*100:.1f}% conf): {reason}", case_id=case.id, agent_run_id=run_id)
+                    audit_service.record_event(db, "ACTION_SELECTED", "AGENT", f"Action selected: {action}. Confidence: {conf*100:.0f}%. Reasoning: {reason}", case_id=case.id, agent_run_id=run_id)
 
                 elif step_name == "CHECK_GUARDRAILS":
                     action = agent_run.recommended_action or "RETRY"
@@ -140,7 +146,7 @@ class ExecutionService:
                     guardrail_passed = allowed
                     step.output_summary = json.dumps({"allowed": allowed, "reason": reason, "checks": checks})
                     step.status = "SUCCESS" if allowed else "BLOCKED"
-                    audit_service.record_event(db, "GUARDRAIL_CHECK", "POLICY_ENGINE", f"Guardrail check for {action}: {'ALLOWED' if allowed else 'BLOCKED'} ({reason})", case_id=case.id, agent_run_id=run_id)
+                    audit_service.record_event(db, "POLICY_GUARDRAILS_VALIDATED", "POLICY_ENGINE", f"Policy / guardrails validated: proposal to {action} was {'APPROVED' if allowed else 'BLOCKED'} ({reason})", case_id=case.id, agent_run_id=run_id)
                     if not allowed:
                         agent_run.status = "BLOCKED"
                         agent_run.error = reason
@@ -176,12 +182,13 @@ class ExecutionService:
 
                     step.output_summary = json.dumps(action_result)
                     step.status = "SUCCESS"
-                    audit_service.record_event(db, "ACTION_EXECUTED", "EXECUTOR", f"Executed {action}: {action_result.get('status')}", case_id=case.id, agent_run_id=run_id)
+                    audit_service.record_event(db, "RECOVERY_ACTION_EXECUTED", "EXECUTOR", f"Recovery action executed: {action}", case_id=case.id, agent_run_id=run_id)
 
                 elif step_name == "OBSERVE":
                     status_str = action_result.get("status") if action_result else "UNKNOWN"
                     step.output_summary = json.dumps({"observed_status": status_str, "details": action_result})
                     step.status = "SUCCESS"
+                    audit_service.record_event(db, "PAYMENT_RESULT_RECEIVED", "GATEWAY", f"Payment result received from gateway: status is {status_str}. Details: {action_result.get('message') if action_result else ''}", case_id=case.id, agent_run_id=run_id)
 
                 elif step_name == "UPDATE_STATE":
                     action_type = agent_run.recommended_action or "RETRY"
@@ -207,6 +214,14 @@ class ExecutionService:
                         case.next_action = "NONE"
                         case.customer_action_status = "CANCELLED"
                         agent_run.final_result = "RECOVERED"
+                        audit_service.record_event(
+                            db,
+                            "RECOVERED",
+                            "SYSTEM",
+                            f"Payment recovered successfully. Recovery case status marked RECOVERED.",
+                            case_id=case.id,
+                            agent_run_id=run_id
+                        )
                     elif exec_status == "CUSTOMER_ACTION_REQUIRED":
                         policy = policy_engine.get_active_policy(db)
                         now = datetime.now(timezone.utc)
@@ -274,8 +289,8 @@ class ExecutionService:
 
             if agent_run.status != "BLOCKED":
                 agent_run.status = "COMPLETED"
-                agent_run.completed_at = datetime.now(timezone.utc)
-                db.commit()
+            agent_run.completed_at = datetime.now(timezone.utc)
+            db.commit()
 
             db.refresh(agent_run)
             db.expunge(agent_run)
@@ -368,7 +383,7 @@ class ExecutionService:
                     case.root_cause = cause
                     case.root_cause_confidence = conf
                     output_data = {"root_cause": cause, "confidence": conf}
-                    audit_service.record_event(db, "DIAGNOSIS_COMPLETED", "ML", f"Diagnosed root cause: {cause} (conf: {conf*100:.0f}%)", case_id=case.id, agent_run_id=run_id)
+                    audit_service.record_event(db, "CURRENT_CONDITION_CHECKED", "ML", f"Current condition checked: diagnosed root cause {cause} (confidence: {conf*100:.0f}%)", case_id=case.id, agent_run_id=run_id)
 
                 elif step_name == "PREDICT_RECOVERY":
                     prob = predictor.predict_recovery_probability(
@@ -382,6 +397,7 @@ class ExecutionService:
                     case.expected_recovery = round(case.revenue_at_risk * prob, 2)
                     case.priority_score = case.expected_recovery
                     output_data = {"recovery_probability": prob, "expected_recovery": case.expected_recovery}
+                    audit_service.record_event(db, "RECOVERY_PROBABILITY_CALCULATED", "ML", f"Recovery probability calculated: P(Recovery) = {prob*100:.0f}%, Expected Recovery = ${case.expected_recovery:.2f}", case_id=case.id, agent_run_id=run_id)
 
                 elif step_name == "REVIEW_HISTORY":
                     prior_actions = db.query(RecoveryAction).filter(RecoveryAction.case_id == case.id).all()
@@ -389,10 +405,16 @@ class ExecutionService:
 
                 elif step_name == "SELECT_ACTION":
                     eval_res = recovery_agent.evaluate_case_full(db, case)
-                    action = eval_res["recommended_action"]
-                    reason = eval_res["reason"]
-                    conf = eval_res["confidence"]
-                    agent_run.recommended_action = action
+                    if agent_run.trigger_type in ("MANUAL_APPROVE", "MANUAL_EXECUTE") and agent_run.recommended_action:
+                        action = agent_run.recommended_action
+                        reason = f"Action '{action}' approved manually by employee (Ops User). Original ML recommendation: {eval_res['recommended_action']}."
+                        conf = 1.0
+                    else:
+                        action = eval_res["recommended_action"]
+                        reason = eval_res["reason"]
+                        conf = eval_res["confidence"]
+                        agent_run.recommended_action = action
+
                     if case.status != "RECOVERED":
                         case.recommended_action = action
                     case.agent_confidence = conf
@@ -400,20 +422,19 @@ class ExecutionService:
                         "action": action,
                         "reason": reason,
                         "confidence": conf,
-                        "ml_used": eval_res.get("ml_used", True),
+                        "ml_used": False if agent_run.trigger_type in ("MANUAL_APPROVE", "MANUAL_EXECUTE") else eval_res.get("ml_used", True),
                         "model": eval_res.get("model", "HistGradientBoostingClassifier"),
                         "probabilities": eval_res.get("probabilities", {}),
                         "risk_assessment": eval_res.get("risk_assessment", "LOW"),
                         "supporting_factors": eval_res.get("supporting_factors", [])
                     }
-                    audit_actor = "ML_MODEL" if eval_res.get("ml_used") else "AGENT"
-                    audit_service.record_event(db, "ACTION_RECOMMENDED", audit_actor, f"ML Model proposed {action} ({conf*100:.1f}% conf): {reason}", case_id=case.id, agent_run_id=run_id)
+                    audit_service.record_event(db, "ACTION_SELECTED", "AGENT", f"Action selected: {action}. Confidence: {conf*100:.0f}%. Reasoning: {reason}", case_id=case.id, agent_run_id=run_id)
 
                 elif step_name == "CHECK_GUARDRAILS":
                     action = agent_run.recommended_action or "RETRY"
                     allowed, reason, checks = policy_engine.validate_action(db, case, action)
                     output_data = {"allowed": allowed, "reason": reason, "checks": checks}
-                    audit_service.record_event(db, "GUARDRAIL_CHECK", "POLICY_ENGINE", f"Guardrail check for {action}: {'ALLOWED' if allowed else 'BLOCKED'}", case_id=case.id, agent_run_id=run_id)
+                    audit_service.record_event(db, "POLICY_GUARDRAILS_VALIDATED", "POLICY_ENGINE", f"Policy / guardrails validated: proposal to {action} was {'APPROVED' if allowed else 'BLOCKED'} ({reason})", case_id=case.id, agent_run_id=run_id)
                     if not allowed:
                         step.status = "BLOCKED"
                         step.output_summary = json.dumps(output_data)
@@ -451,11 +472,12 @@ class ExecutionService:
                     else: # STOP
                         action_result = {"status": "STOPPED", "message": "Automated recovery halted by policy/agent."}
                     output_data = action_result
-                    audit_service.record_event(db, "ACTION_EXECUTED", "EXECUTOR", f"Executed {action}: {action_result.get('status')}", case_id=case.id, agent_run_id=run_id)
+                    audit_service.record_event(db, "RECOVERY_ACTION_EXECUTED", "EXECUTOR", f"Recovery action executed: {action}", case_id=case.id, agent_run_id=run_id)
 
                 elif step_name == "OBSERVE":
                     status_str = action_result.get("status") if action_result else "UNKNOWN"
                     output_data = {"observed_status": status_str, "details": action_result}
+                    audit_service.record_event(db, "PAYMENT_RESULT_RECEIVED", "GATEWAY", f"Payment result received from gateway: status is {status_str}. Details: {action_result.get('message') if action_result else ''}", case_id=case.id, agent_run_id=run_id)
 
                 elif step_name == "UPDATE_STATE":
                     action_type = agent_run.recommended_action or "RETRY"
@@ -480,6 +502,14 @@ class ExecutionService:
                         case.next_action = "NONE"
                         case.customer_action_status = "CANCELLED"
                         agent_run.final_result = "RECOVERED"
+                        audit_service.record_event(
+                            db,
+                            "RECOVERED",
+                            "SYSTEM",
+                            f"Payment recovered successfully. Recovery case status marked RECOVERED.",
+                            case_id=case.id,
+                            agent_run_id=run_id
+                        )
                     elif exec_status == "CUSTOMER_ACTION_REQUIRED":
                         policy = policy_engine.get_active_policy(db)
                         now = datetime.now(timezone.utc)
@@ -548,8 +578,8 @@ class ExecutionService:
 
             if agent_run.status != "BLOCKED":
                 agent_run.status = "COMPLETED"
-                agent_run.completed_at = datetime.now(timezone.utc)
-                db.commit()
+            agent_run.completed_at = datetime.now(timezone.utc)
+            db.commit()
 
             yield {"data": json.dumps({'run_id': run_id, 'event': 'COMPLETE', 'final_result': agent_run.final_result, 'case_status': case.status})}
 

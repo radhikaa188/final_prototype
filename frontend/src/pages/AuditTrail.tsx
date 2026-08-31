@@ -73,8 +73,11 @@ export const AuditTrail: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {events.map((ev) => (
-                  <React.Fragment key={ev.id}>
+                {events
+                  .slice()
+                  .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+                  .map((ev) => (
+                    <React.Fragment key={ev.id}>
                     <tr
                       onClick={() => setExpandedId(expandedId === ev.id ? null : ev.id)}
                       className="hover:bg-slate-50 cursor-pointer transition-colors"

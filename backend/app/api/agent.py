@@ -3,7 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sse_starlette.sse import EventSourceResponse
 from sqlalchemy.orm import Session
 from app.db.session import get_db
-from app.db.models import AgentRun, AgentRunStep, RecoveryCase, Payment, Customer
+from app.db.models import AgentRun, AgentRunStep, RecoveryCase, Payment, Customer, User
+from app.auth.dependencies import get_current_user
 from app.services.execution_service import execution_service
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -13,7 +14,8 @@ def list_agent_runs(
     status: str = Query(None),
     limit: int = Query(50),
     offset: int = Query(0),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     query = db.query(AgentRun)
     if status:
@@ -44,7 +46,7 @@ def list_agent_runs(
     return {"total": total, "runs": res}
 
 @router.get("/runs/{run_id}")
-def get_agent_run(run_id: str, db: Session = Depends(get_db)):
+def get_agent_run(run_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     r = db.query(AgentRun).filter(AgentRun.id == run_id).first()
     if not r:
         raise HTTPException(status_code=404, detail="Agent run not found")

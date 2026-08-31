@@ -181,7 +181,7 @@ export const CommandCenter: React.FC = () => {
               <Zap className="w-4 h-4 text-emerald-600" />
               Recovery Conversion Funnel
             </h2>
-            <p className="text-xs text-slate-500">Progression from payment failure to capture</p>
+            <p className="text-xs text-slate-500">Cumulative progression of failed payments through resolution</p>
           </div>
 
           <div className="space-y-3 pt-2">

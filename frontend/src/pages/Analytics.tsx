@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { BarChart3, Brain, TrendingUp, Info } from 'lucide-react';
+import React, { useEffect, useState, useRef } from 'react';
+import { BarChart3, Brain, TrendingUp, Info, RefreshCw } from 'lucide-react';
 import {
   BarChart,
   Bar,
@@ -18,41 +18,82 @@ export const Analytics: React.FC = () => {
   const [actions, setActions] = useState<any[]>([]);
   const [mlMetrics, setMlMetrics] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const fetchingRef = useRef(false);
+
+  const loadAnalytics = async (isInitial = false) => {
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
+
+    if (isInitial) {
+      setLoading(true);
+    } else {
+      setRefreshing(true);
+    }
+
+    try {
+      const [sumRes, reasonRes, actRes, mlRes] = await Promise.all([
+        api.getAnalyticsSummary(),
+        api.getAnalyticsFailureReasons(),
+        api.getAnalyticsActions(),
+        api.getAnalyticsMLMetrics(),
+      ]);
+      setSummary(sumRes);
+      setReasons(reasonRes);
+      setActions(actRes);
+      setMlMetrics(mlRes);
+    } catch (err) {
+      console.error('Failed to load analytics:', err);
+    } finally {
+      if (isInitial) {
+        setLoading(false);
+      } else {
+        setRefreshing(false);
+      }
+      fetchingRef.current = false;
+    }
+  };
 
   useEffect(() => {
-    async function loadAnalytics() {
-      try {
-        setLoading(true);
-        const [sumRes, reasonRes, actRes, mlRes] = await Promise.all([
-          api.getAnalyticsSummary(),
-          api.getAnalyticsFailureReasons(),
-          api.getAnalyticsActions(),
-          api.getAnalyticsMLMetrics(),
-        ]);
-        setSummary(sumRes);
-        setReasons(reasonRes);
-        setActions(actRes);
-        setMlMetrics(mlRes);
-      } catch (err) {
-        console.error('Failed to load analytics:', err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadAnalytics();
+    // Initial fetch
+    loadAnalytics(true);
+
+    // Setup polling every 5s
+    const pollInterval = setInterval(() => {
+      loadAnalytics(false);
+    }, 5000);
+
+    // Cleanup on unmount
+    return () => {
+      clearInterval(pollInterval);
+    };
   }, []);
 
   if (loading) {
     return <div className="p-8 text-center text-slate-500 font-mono text-xs">Loading recovery analytics telemetry...</div>;
   }
 
+  const recoveredRevenueActions = actions.filter(
+    (a) => a.action_type === "RETRY" || a.action_type === "CUSTOMER_NUDGE"
+  );
+
   return (
     <div className="p-8 space-y-8 max-w-7xl mx-auto">
-      <div>
-        <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-3">
-          Analytics &amp; ML Model Performance
-        </h1>
-        <p className="text-xs text-slate-500 mt-1">Genuine machine learning evaluation metrics computed on chronological held-out test data</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-3">
+            Analytics &amp; ML Model Performance
+          </h1>
+          <p className="text-xs text-slate-500 mt-1">Genuine machine learning evaluation metrics computed on chronological held-out test data</p>
+        </div>
+        <button
+          onClick={() => loadAnalytics(false)}
+          disabled={loading || refreshing}
+          className="btn-dark flex items-center gap-2 text-xs font-bold font-mono uppercase tracking-wider py-2.5 px-4 disabled:opacity-50"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+          {refreshing ? 'Refreshing...' : 'Refresh'}
+        </button>
       </div>
 
       {/* Summary KPI Cards */}
@@ -129,7 +170,7 @@ export const Analytics: React.FC = () => {
           <h3 className="text-xs font-bold text-slate-700">P(Recovery) Probability Distribution Across Cases</h3>
           <div className="h-48 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={mlMetrics?.prediction_distribution || []}>
+              <BarChart key={`ml-dist-${JSON.stringify(mlMetrics?.prediction_distribution)}`} data={mlMetrics?.prediction_distribution || []}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                 <XAxis dataKey="range" stroke="#64748b" fontSize={11} />
                 <YAxis stroke="#64748b" fontSize={11} />
@@ -147,7 +188,7 @@ export const Analytics: React.FC = () => {
           <h2 className="text-sm font-bold text-slate-900">Revenue at Risk by Failure Reason</h2>
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={reasons}>
+              <BarChart key={`reasons-${JSON.stringify(reasons)}`} data={reasons}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                 <XAxis dataKey="root_cause" stroke="#64748b" fontSize={10} />
                 <YAxis stroke="#64748b" fontSize={10} tickFormatter={(v) => `$${v}`} />
@@ -162,7 +203,7 @@ export const Analytics: React.FC = () => {
           <h2 className="text-sm font-bold text-slate-900">Recovered Revenue by Action Type</h2>
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={actions}>
+              <BarChart key={`actions-${JSON.stringify(recoveredRevenueActions)}`} data={recoveredRevenueActions}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                 <XAxis dataKey="action_type" stroke="#64748b" fontSize={10} />
                 <YAxis stroke="#64748b" fontSize={10} tickFormatter={(v) => `$${v}`} />

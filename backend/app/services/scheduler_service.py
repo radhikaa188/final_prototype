@@ -93,7 +93,7 @@ class SchedulerService:
                 # Create and execute new agent run for re-evaluation
                 audit_service.record_event(
                     db,
-                    "RECOVERY_REEVALUATED",
+                    "RE-EVALUATION STARTED",
                     "SYSTEM",
                     f"Scheduled re-evaluation triggered after wait period expired.",
                     case_id=case.id

@@ -12,8 +12,12 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { StatusBadge } from '../components/common/StatusBadge';
+import { useAuth } from '../auth/AuthContext';
 
 export const CaseDetail: React.FC = () => {
+  const { role } = useAuth();
+  const canMutate = role === 'OPS' || role === 'ADMIN';
+
   const { caseId } = useParams<{ caseId: string }>();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -141,36 +145,44 @@ export const CaseDetail: React.FC = () => {
 
         {/* Action Buttons */}
         <div className="flex items-center gap-3">
-          <button
-            onClick={handleReject}
-            disabled={actionLoading || data.status === 'RECOVERED' || data.status === 'STOPPED'}
-            className="px-4 py-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold hover:bg-rose-100 disabled:opacity-40 cursor-pointer"
-          >
-            Reject
-          </button>
-          <button
-            onClick={handleEscalate}
-            disabled={actionLoading || data.status === 'RECOVERED'}
-            className="px-4 py-2 rounded-xl bg-purple-50 border border-purple-200 text-purple-700 text-xs font-bold hover:bg-purple-100 disabled:opacity-40 cursor-pointer"
-          >
-            Escalate
-          </button>
-          <button
-            onClick={handleApprove}
-            disabled={actionLoading || data.status === 'RECOVERED' || data.status === 'STOPPED'}
-            className="btn-primary flex items-center gap-2"
-          >
-            <CheckCircle2 className="w-4 h-4" />
-            Approve Action
-          </button>
-          <button
-            onClick={handleExecute}
-            disabled={actionLoading || data.status === 'RECOVERED' || data.status === 'STOPPED'}
-            className="btn-dark flex items-center gap-2"
-          >
-            <Play className="w-4 h-4 fill-current" />
-            Execute Live Run
-          </button>
+          {canMutate ? (
+            <>
+              <button
+                onClick={handleReject}
+                disabled={actionLoading || data.status === 'RECOVERED' || data.status === 'STOPPED'}
+                className="px-4 py-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold hover:bg-rose-100 disabled:opacity-40 cursor-pointer"
+              >
+                Reject
+              </button>
+              <button
+                onClick={handleEscalate}
+                disabled={actionLoading || data.status === 'RECOVERED'}
+                className="px-4 py-2 rounded-xl bg-purple-50 border border-purple-200 text-purple-700 text-xs font-bold hover:bg-purple-100 disabled:opacity-40 cursor-pointer"
+              >
+                Escalate
+              </button>
+              <button
+                onClick={handleApprove}
+                disabled={actionLoading || data.status === 'RECOVERED' || data.status === 'STOPPED'}
+                className="btn-primary flex items-center gap-2"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                Approve Action
+              </button>
+              <button
+                onClick={handleExecute}
+                disabled={actionLoading || data.status === 'RECOVERED' || data.status === 'STOPPED'}
+                className="btn-dark flex items-center gap-2"
+              >
+                <Play className="w-4 h-4 fill-current" />
+                Execute Live Run
+              </button>
+            </>
+          ) : (
+            <div className="text-xs text-slate-400 font-bold px-3 py-1.5 rounded-lg bg-slate-100 border border-slate-200 cursor-not-allowed">
+              Action Execution Restricted (OPS / ADMIN Required)
+            </div>
+          )}
         </div>
       </div>
 

@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.db.session import get_db
-from app.db.models import Payment, Customer, RecoveryCase
+from app.db.models import Payment, Customer, RecoveryCase, User
+from app.auth.dependencies import get_current_user
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 
@@ -10,7 +11,8 @@ def list_payments(
     status: str = Query(None),
     limit: int = Query(100),
     offset: int = Query(0),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     query = db.query(Payment)
     if status:
@@ -42,7 +44,7 @@ def list_payments(
     return {"total": total, "payments": res}
 
 @router.get("/{payment_id}")
-def get_payment_detail(payment_id: str, db: Session = Depends(get_db)):
+def get_payment_detail(payment_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     p = db.query(Payment).filter(Payment.id == payment_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Payment not found")

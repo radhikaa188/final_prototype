@@ -197,3 +197,16 @@ class WebhookEvent(Base):
     received_at = Column(DateTime, default=utc_now)
     processed_at = Column(DateTime, default=utc_now)
 
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    email = Column(String, unique=True, index=True, nullable=False)
+    name = Column(String, nullable=True)
+    password_hash = Column(String, nullable=False)
+    role = Column(String, default="VIEWER", nullable=False)  # ADMIN, OPS, VIEWER
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=utc_now)
+
+

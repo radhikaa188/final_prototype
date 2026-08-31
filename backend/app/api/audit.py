@@ -2,7 +2,8 @@ import json
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from app.db.session import get_db
-from app.db.models import AuditEvent
+from app.db.models import AuditEvent, User
+from app.auth.dependencies import get_current_user
 
 router = APIRouter(prefix="/audit", tags=["audit"])
 
@@ -13,7 +14,8 @@ def list_audit_events(
     case_id: str = Query(None),
     limit: int = Query(100),
     offset: int = Query(0),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     query = db.query(AuditEvent)
     if actor_type:

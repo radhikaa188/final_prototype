@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 
 const mainNav = [
-  { path: '/', label: 'Command Center', icon: LayoutDashboard },
+  { path: '/dashboard', label: 'Command Center', icon: LayoutDashboard },
   { path: '/recovery', label: 'Recovery Queue', icon: RefreshCw },
   { path: '/customer-actions', label: 'Customer Actions', icon: UserCheck },
   { path: '/agent', label: 'Agent Operations', icon: Bot },
@@ -50,10 +50,9 @@ export const Sidebar: React.FC = () => {
             to={item.path}
             end={item.path === '/'}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs transition-all duration-150 ${
-                isActive
-                  ? 'bg-[#1E1E24] text-white font-bold shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-[#16161D]'
+              `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs transition-all duration-150 ${isActive
+                ? 'bg-[#1E1E24] text-white font-bold shadow-sm'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-[#16161D]'
               }`
             }
           >

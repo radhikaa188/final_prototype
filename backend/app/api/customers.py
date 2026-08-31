@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.db.session import get_db
-from app.db.models import Customer, Payment, RecoveryCase, RecoveryAction
+from app.db.models import Customer, Payment, RecoveryCase, RecoveryAction, User
+from app.auth.dependencies import get_current_user
 
 router = APIRouter(prefix="/customers", tags=["customers"])
 
@@ -10,7 +11,8 @@ router = APIRouter(prefix="/customers", tags=["customers"])
 def list_customers(
     limit: int = Query(100),
     offset: int = Query(0),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     query = db.query(Customer)
     total = query.count()
@@ -50,7 +52,7 @@ def list_customers(
     return {"total": total, "customers": res}
 
 @router.get("/{customer_id}")
-def get_customer_detail(customer_id: str, db: Session = Depends(get_db)):
+def get_customer_detail(customer_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     c = db.query(Customer).filter(Customer.id == customer_id).first()
     if not c:
         raise HTTPException(status_code=404, detail="Customer not found")

@@ -5,10 +5,18 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, 'backend')
 from app.main import app
 from app.db.session import engine, SessionLocal, Base
-from app.db.models import Customer, Payment, RecoveryCase, AgentRun, RecoveryAction, AuditEvent
+from app.db.models import Customer, Payment, RecoveryCase, AgentRun, RecoveryAction, AuditEvent, User
 from app.services.execution_service import execution_service
+from app.auth.security import create_access_token
+from app.auth.init_users import seed_default_users
+
+with SessionLocal() as db_init:
+    seed_default_users(db_init)
+    ops_u = db_init.query(User).filter(User.role == "OPS").first()
+    tkn = create_access_token({"sub": ops_u.id, "email": ops_u.email, "role": ops_u.role})
 
 client = TestClient(app)
+client.headers["Authorization"] = f"Bearer {tkn}"
 
 def run_terminal_state_fix_tests():
     print("=========================================================================")

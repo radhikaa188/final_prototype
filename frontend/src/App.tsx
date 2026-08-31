@@ -6,7 +6,6 @@ import { ProtectedRoute } from './auth/ProtectedRoute';
 import { Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
 import { TestModeBanner } from './components/layout/TestModeBanner';
-
 import { LandingPage } from './pages/LandingPage';
 import { Login } from './pages/Login';
 import { CommandCenter } from './pages/CommandCenter';

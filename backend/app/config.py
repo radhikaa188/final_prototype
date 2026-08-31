@@ -32,4 +32,31 @@ class Settings:
     JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 
+    # CORS Allowed Origins
+    DEFAULT_CORS_ORIGINS: list = [
+        "https://frontend-six-tau-27.vercel.app",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+        "http://localhost:5175",
+        "http://127.0.0.1:5175",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:4173",
+        "http://127.0.0.1:4173",
+    ]
+
+    @property
+    def CORS_ORIGINS(self) -> list:
+        origins = list(self.DEFAULT_CORS_ORIGINS)
+        custom_origins = os.getenv("CORS_ORIGINS") or os.getenv("FRONTEND_URL")
+        if custom_origins:
+            for o in custom_origins.split(","):
+                cleaned = o.strip().strip("'").strip('"')
+                if cleaned and cleaned not in origins:
+                    origins.append(cleaned)
+        return origins
+
 settings = Settings()
+

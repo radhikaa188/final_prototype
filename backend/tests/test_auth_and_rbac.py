@@ -132,3 +132,23 @@ def test_role_based_case_approval_and_audit_attribution():
         latest_event = db.query(AuditEvent).filter(AuditEvent.case_id == case_id).order_by(AuditEvent.created_at.desc()).first()
         assert latest_event is not None
         assert "ops@recoverai.io" in latest_event.description or "Operations Lead" in latest_event.description
+
+
+def test_jwt_secret_key_missing_fails_fast(monkeypatch):
+    """
+    Verifies that when JWT_SECRET_KEY is missing/empty, the system raises a clear
+    RuntimeError rather than silently generating/using a fallback secret.
+    """
+    from app.config import settings
+    from app.auth.security import create_access_token, decode_access_token
+
+    # Temporarily set JWT_SECRET_KEY to empty
+    monkeypatch.setattr(settings, "JWT_SECRET_KEY", "")
+
+    with pytest.raises(RuntimeError) as exc_create:
+        create_access_token({"sub": "admin@recoverai.io", "role": "ADMIN"})
+    assert "JWT_SECRET_KEY environment variable is not configured" in str(exc_create.value)
+
+    with pytest.raises(RuntimeError) as exc_decode:
+        decode_access_token("some.fake.token")
+    assert "JWT_SECRET_KEY environment variable is not configured" in str(exc_decode.value)

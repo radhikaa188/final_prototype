@@ -27,7 +27,7 @@ class Settings:
     MISTRAL_API_KEY: str = os.getenv("MISTRAL_API_KEY", "")
     MISTRAL_MODEL: str = os.getenv("MISTRAL_MODEL", "mistral-small-latest")
 
-    # JWT Authentication & Authorization Settings
+    # JWT Authentication & Authorization Settings (Strictly loaded from environment)
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "")
     JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "60"))

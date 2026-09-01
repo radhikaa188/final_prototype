@@ -74,7 +74,7 @@ export const Sidebar: React.FC = () => {
           </div>
           <div>
             <h1 className="text-base font-extrabold text-white tracking-wider">
-              Recover<span className="text-purple-400">AI</span>
+              Revora<span className="text-purple-400"> AI</span>
             </h1>
             <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest">
               Autonomous Recovery

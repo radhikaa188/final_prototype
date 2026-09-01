@@ -15,7 +15,7 @@ export interface LoginResponse {
 }
 
 export async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const token = localStorage.getItem('recoverai_token');
+  const token = localStorage.getItem('revora_token') || localStorage.getItem('recoverai_token');
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'Cache-Control': 'no-cache',
@@ -45,9 +45,11 @@ export async function fetchApi<T>(endpoint: string, options?: RequestInit): Prom
 
     // Auto-logout on 401 Unauthorized (unless logging in)
     if (res.status === 401 && !endpoint.includes('/auth/login')) {
+      localStorage.removeItem('revora_token');
+      localStorage.removeItem('revora_user');
       localStorage.removeItem('recoverai_token');
       localStorage.removeItem('recoverai_user');
-      window.dispatchEvent(new CustomEvent('recoverai:unauthorized'));
+      window.dispatchEvent(new CustomEvent('revora:unauthorized'));
     }
 
     throw new Error(errorDetail);

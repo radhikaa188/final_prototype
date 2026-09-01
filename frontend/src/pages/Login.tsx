@@ -57,7 +57,7 @@ export const Login: React.FC = () => {
             </div>
           </div>
           <span className="font-bold text-lg tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
-            Recover<span className="text-indigo-400">AI</span>
+            Revora <span className="text-purple-400">AI</span>
           </span>
         </Link>
         <Link
@@ -71,10 +71,10 @@ export const Login: React.FC = () => {
       {/* Main Login Form Box */}
       <main className="flex-1 flex items-center justify-center p-6 z-10">
         <div className="w-full max-w-md bg-slate-900/90 border border-slate-800/80 backdrop-blur-xl rounded-3xl p-8 shadow-2xl relative">
-          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-indigo-500 via-cyan-400 to-indigo-600 rounded-t-3xl" />
+          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-purple-500 via-indigo-400 to-cyan-500 rounded-t-3xl" />
 
           <div className="mb-6 text-center">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-semibold mb-3">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-400 text-xs font-semibold mb-3">
               <Lock size={12} /> Secure Authentication
             </div>
             <h1 className="text-2xl font-bold text-slate-100 tracking-tight">Recovery Operations</h1>
@@ -99,8 +99,8 @@ export const Login: React.FC = () => {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="operator@recoverai.io"
-                  className="w-full bg-slate-950/80 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 transition outline-none"
+                  placeholder="operator@revora.ai"
+                  className="w-full bg-slate-950/80 border border-slate-800 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 transition outline-none"
                   required
                 />
               </div>
@@ -117,7 +117,7 @@ export const Login: React.FC = () => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full bg-slate-950/80 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl pl-10 pr-10 py-2.5 text-sm text-slate-100 placeholder-slate-600 transition outline-none"
+                  className="w-full bg-slate-950/80 border border-slate-800 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 rounded-xl pl-10 pr-10 py-2.5 text-sm text-slate-100 placeholder-slate-600 transition outline-none"
                   required
                 />
                 <button
@@ -133,7 +133,7 @@ export const Login: React.FC = () => {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-cyan-500 hover:from-indigo-500 hover:to-cyan-400 text-white font-semibold text-sm transition shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2 group disabled:opacity-50 cursor-pointer"
+              className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-cyan-500 hover:from-purple-500 hover:to-cyan-400 text-white font-semibold text-sm transition shadow-lg shadow-purple-600/25 flex items-center justify-center gap-2 group disabled:opacity-50 cursor-pointer"
             >
               {isSubmitting ? (
                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -154,10 +154,10 @@ export const Login: React.FC = () => {
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
-                onClick={() => setDemoCredentials('admin@recoverai.io', 'admin123')}
-                className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 hover:border-indigo-500/50 hover:bg-indigo-950/20 text-left transition group"
+                onClick={() => setDemoCredentials('admin@revora.ai', 'admin123')}
+                className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 hover:border-purple-500/50 hover:bg-purple-950/20 text-left transition group cursor-pointer"
               >
-                <div className="flex items-center gap-1.5 text-indigo-400 text-xs font-bold mb-0.5">
+                <div className="flex items-center gap-1.5 text-purple-400 text-xs font-bold mb-0.5">
                   <Shield size={12} /> Admin
                 </div>
                 <span className="text-[10px] text-slate-500 group-hover:text-slate-400 block truncate">Full Control</span>
@@ -165,8 +165,8 @@ export const Login: React.FC = () => {
 
               <button
                 type="button"
-                onClick={() => setDemoCredentials('ops@recoverai.io', 'ops123')}
-                className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 hover:border-cyan-500/50 hover:bg-cyan-950/20 text-left transition group"
+                onClick={() => setDemoCredentials('ops@revora.ai', 'ops123')}
+                className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 hover:border-cyan-500/50 hover:bg-cyan-950/20 text-left transition group cursor-pointer"
               >
                 <div className="flex items-center gap-1.5 text-cyan-400 text-xs font-bold mb-0.5">
                   <Cpu size={12} /> Ops Lead
@@ -176,8 +176,8 @@ export const Login: React.FC = () => {
 
               <button
                 type="button"
-                onClick={() => setDemoCredentials('viewer@recoverai.io', 'viewer123')}
-                className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 hover:border-emerald-500/50 hover:bg-emerald-950/20 text-left transition group"
+                onClick={() => setDemoCredentials('viewer@revora.ai', 'viewer123')}
+                className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 hover:border-emerald-500/50 hover:bg-emerald-950/20 text-left transition group cursor-pointer"
               >
                 <div className="flex items-center gap-1.5 text-emerald-400 text-xs font-bold mb-0.5">
                   <UserCheck size={12} /> Viewer
@@ -191,7 +191,7 @@ export const Login: React.FC = () => {
 
       {/* Footer info */}
       <footer className="p-6 text-center text-xs text-slate-500 z-10">
-        RecoverAI Autonomous Payment Recovery System • Enterprise JWT Security
+        Revora AI Autonomous Payment Recovery System • Enterprise JWT Security
       </footer>
     </div>
   );

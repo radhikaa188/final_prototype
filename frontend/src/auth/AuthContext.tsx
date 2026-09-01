@@ -15,9 +15,9 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem('recoverai_token'));
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem('revora_token') || localStorage.getItem('recoverai_token'));
   const [user, setUser] = useState<UserProfile | null>(() => {
-    const saved = localStorage.getItem('recoverai_user');
+    const saved = localStorage.getItem('revora_user') || localStorage.getItem('recoverai_user');
     if (saved) {
       try {
         return JSON.parse(saved);
@@ -32,12 +32,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // Validate session on mount if token exists
   useEffect(() => {
     const initAuth = async () => {
-      const storedToken = localStorage.getItem('recoverai_token');
+      const storedToken = localStorage.getItem('revora_token') || localStorage.getItem('recoverai_token');
       if (storedToken) {
         try {
           const profile = await api.getMe();
           setUser(profile);
-          localStorage.setItem('recoverai_user', JSON.stringify(profile));
+          localStorage.setItem('revora_user', JSON.stringify(profile));
         } catch {
           // Token invalid or expired
           logout();
@@ -52,22 +52,28 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const handleUnauthorized = () => {
       logout();
     };
+    window.addEventListener('revora:unauthorized', handleUnauthorized);
     window.addEventListener('recoverai:unauthorized', handleUnauthorized);
-    return () => window.removeEventListener('recoverai:unauthorized', handleUnauthorized);
+    return () => {
+      window.removeEventListener('revora:unauthorized', handleUnauthorized);
+      window.removeEventListener('recoverai:unauthorized', handleUnauthorized);
+    };
   }, []);
 
   const login = async (email: string, password: string): Promise<UserProfile> => {
     const response = await api.login({ email, password });
     setToken(response.access_token);
     setUser(response.user);
-    localStorage.setItem('recoverai_token', response.access_token);
-    localStorage.setItem('recoverai_user', JSON.stringify(response.user));
+    localStorage.setItem('revora_token', response.access_token);
+    localStorage.setItem('revora_user', JSON.stringify(response.user));
     return response.user;
   };
 
   const logout = () => {
     setToken(null);
     setUser(null);
+    localStorage.removeItem('revora_token');
+    localStorage.removeItem('revora_user');
     localStorage.removeItem('recoverai_token');
     localStorage.removeItem('recoverai_user');
     api.logout().catch(() => {});

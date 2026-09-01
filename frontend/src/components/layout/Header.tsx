@@ -538,7 +538,7 @@ export const Header: React.FC = () => {
                 <span className="text-xs font-bold text-slate-900 leading-none">{user?.name || user?.email || 'Operator'}</span>
                 {getRoleBadge()}
               </div>
-              <div className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[140px]">{user?.email || 'operator@recoverai.io'}</div>
+              <div className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[140px]">{user?.email || 'operator@revora.ai'}</div>
             </div>
 
             {/* Logout Button */}

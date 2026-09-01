@@ -4,20 +4,38 @@ from app.auth.security import hash_password
 
 DEFAULT_USERS = [
     {
-        "email": "admin@recoverai.io",
+        "email": "admin@revora.ai",
         "name": "System Administrator",
         "password": "admin123",
         "role": "ADMIN"
     },
     {
-        "email": "ops@recoverai.io",
+        "email": "ops@revora.ai",
         "name": "Operations Lead",
         "password": "ops123",
         "role": "OPS"
     },
     {
-        "email": "viewer@recoverai.io",
+        "email": "viewer@revora.ai",
         "name": "Financial Analyst",
+        "password": "viewer123",
+        "role": "VIEWER"
+    },
+    {
+        "email": "admin@recoverai.io",
+        "name": "System Administrator (Legacy)",
+        "password": "admin123",
+        "role": "ADMIN"
+    },
+    {
+        "email": "ops@recoverai.io",
+        "name": "Operations Lead (Legacy)",
+        "password": "ops123",
+        "role": "OPS"
+    },
+    {
+        "email": "viewer@recoverai.io",
+        "name": "Financial Analyst (Legacy)",
         "password": "viewer123",
         "role": "VIEWER"
     }

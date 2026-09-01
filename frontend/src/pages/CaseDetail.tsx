@@ -222,7 +222,7 @@ export const CaseDetail: React.FC = () => {
             <p className="text-xs text-blue-700">
               {isFutureRetry
                 ? 'Previous recovery attempt failed. Recovery retry is scheduled and will automatically execute when the retry window opens.'
-                : 'A previous retry attempt failed. RecoverAI is reassessing the context before selecting the next recovery action.'}
+                : 'A previous retry attempt failed. Revora AI is reassessing the context before selecting the next recovery action.'}
             </p>
             <div className="flex flex-wrap items-center gap-4 text-[11px] font-mono text-blue-800 mt-1">
               <span>Status: <strong>RE_EVALUATING</strong></span>

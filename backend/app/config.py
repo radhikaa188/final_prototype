@@ -10,7 +10,7 @@ elif os.path.exists(os.path.join(ROOT_DIR, ".env")):
     load_dotenv(os.path.join(ROOT_DIR, ".env"))
 
 class Settings:
-    PROJECT_NAME: str = "RecoverAI"
+    PROJECT_NAME: str = "Revora AI"
     VERSION: str = "1.0.0"
     API_V1_STR: str = "/api"
     

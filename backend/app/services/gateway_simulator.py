@@ -6,7 +6,13 @@ class SimulatedPaymentGateway:
     def __init__(self, force_success_rate: float = 0.75):
         self.force_success_rate = force_success_rate
 
-    def process_retry(self, gateway_payment_id: str, amount: float, attempt_number: int) -> Dict[str, Any]:
+    def process_retry(
+        self, 
+        gateway_payment_id: str, 
+        amount: float, 
+        attempt_number: int,
+        original_failure_reason: str = None
+    ) -> Dict[str, Any]:
         """
         Simulates payment gateway response (Stripe / Razorpay / Adyen style)
         """
@@ -24,13 +30,7 @@ class SimulatedPaymentGateway:
                 "message": "Payment captured successfully."
             }
         else:
-            failure_reasons = [
-                "INSUFFICIENT_FUNDS",
-                "CARD_EXPIRED",
-                "GATEWAY_TIMEOUT",
-                "DO_NOT_HONOR"
-            ]
-            reason = random.choice(failure_reasons)
+            reason = original_failure_reason or "GATEWAY_TIMEOUT"
             return {
                 "status": "FAILED",
                 "transaction_id": f"txn_{random.randint(10000000, 99999999)}",
@@ -38,6 +38,7 @@ class SimulatedPaymentGateway:
                 "gateway_code": "DECLINED",
                 "message": f"Payment retry failed: {reason}"
             }
+
 
     def process_nudge(self, customer_email: str, amount: float) -> Dict[str, Any]:
         """Simulates customer payment link click and retry"""

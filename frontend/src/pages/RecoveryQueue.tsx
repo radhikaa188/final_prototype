@@ -8,7 +8,7 @@ export const RecoveryQueue: React.FC = () => {
   const [cases, setCases] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [activeFilter, setActiveFilter] = useState('All');
+  const [activeFilter, setActiveFilter] = useState('ACTIVE');
   const [actionFilter, setActionFilter] = useState('');
   const [rootCauseFilter, setRootCauseFilter] = useState('');
 
@@ -18,7 +18,7 @@ export const RecoveryQueue: React.FC = () => {
     try {
       setLoading(true);
       const params: Record<string, any> = {};
-      if (activeFilter !== 'All') {
+      if (activeFilter) {
         params.status = activeFilter;
       }
       if (actionFilter) params.recommended_action = actionFilter;
@@ -38,6 +38,16 @@ export const RecoveryQueue: React.FC = () => {
     fetchCases();
   }, [activeFilter, actionFilter, rootCauseFilter]);
 
+  const filterTabs = [
+    { id: 'ACTIVE', label: 'All Active' },
+    { id: 'PRIORITIZED', label: 'Prioritized' },
+    { id: 'CUSTOMER_ACTION_REQUIRED', label: 'Customer Action' },
+    { id: 'NEEDS_REVIEW', label: 'Human Review' },
+    { id: 'STOPPED', label: 'Stopped' },
+    { id: 'RECOVERED', label: 'Recovered' },
+    { id: 'ALL', label: 'All' },
+  ];
+
   return (
     <div className="p-8 space-y-6 max-w-7xl mx-auto">
       {/* Header */}
@@ -46,10 +56,16 @@ export const RecoveryQueue: React.FC = () => {
           <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-3">
             Recovery Queue
             <span className="text-xs px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 font-mono border border-purple-200 font-bold">
-              {total} Cases Ranked
+              {total} {activeFilter === 'RECOVERED' ? 'Recovered Cases' : 'Cases Ranked'}
             </span>
           </h1>
-          <p className="text-xs text-slate-500 mt-1">Cases automatically prioritized by Expected Recoverable Revenue (Amount × P(Recovery))</p>
+          <p className="text-xs text-slate-500 mt-1">
+            {activeFilter === 'RECOVERED'
+              ? 'Successfully recovered payment cases.'
+              : activeFilter === 'STOPPED'
+              ? 'Halted / exhausted recovery cases.'
+              : 'Unresolved operational cases automatically prioritized by Expected Recoverable Revenue (Amount × P(Recovery)).'}
+          </p>
         </div>
         <button
           onClick={fetchCases}
@@ -63,20 +79,21 @@ export const RecoveryQueue: React.FC = () => {
       {/* Filter Bar */}
       <div className="flex flex-wrap items-center justify-between gap-4 p-4 glass-panel rounded-xl border border-slate-200 bg-white">
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
-          {['All', 'HIGH_PRIORITY', 'RETRY_READY', 'NEEDS_REVIEW', 'BLOCKED'].map((f) => (
+          {filterTabs.map((tab) => (
             <button
-              key={f}
-              onClick={() => setActiveFilter(f)}
+              key={tab.id}
+              onClick={() => setActiveFilter(tab.id)}
               className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                activeFilter === f
+                activeFilter === tab.id
                   ? 'bg-[#1E1E24] text-white shadow-sm'
                   : 'bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200'
               }`}
             >
-              {f.replace('_', ' ')}
+              {tab.label}
             </button>
           ))}
         </div>
+
 
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">

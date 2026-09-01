@@ -19,9 +19,9 @@ class SchedulerService:
         reevaluated_count = 0
         skipped_count = 0
 
-        # Query all active customer action required cases
+        # Query all active cases requiring scheduled evaluation
         cases = db.query(RecoveryCase).filter(
-            RecoveryCase.status == "CUSTOMER_ACTION_REQUIRED"
+            RecoveryCase.status.in_(["CUSTOMER_ACTION_REQUIRED", "RE_EVALUATING"])
         ).all()
 
         for case in cases:
@@ -36,7 +36,7 @@ class SchedulerService:
                     db,
                     "PAYMENT_SUCCESS_OBSERVED",
                     "SYSTEM",
-                    f"External payment success detected while waiting for customer action. Case marked RECOVERED.",
+                    f"External payment success detected. Case marked RECOVERED.",
                     case_id=case.id
                 )
                 db.commit()
@@ -52,8 +52,8 @@ class SchedulerService:
             if retry_after and retry_after.tzinfo is None:
                 retry_after = retry_after.replace(tzinfo=timezone.utc)
 
-            # 1. Expiration Check
-            if expires_at and now >= expires_at and case.customer_action_status == "PENDING":
+            # 1. Expiration Check (Customer Action window expiration)
+            if case.status == "CUSTOMER_ACTION_REQUIRED" and expires_at and now >= expires_at and case.customer_action_status == "PENDING":
                 case.status = "STOPPED"
                 case.customer_action_status = "EXPIRED"
                 case.next_action = "NONE"
@@ -76,10 +76,12 @@ class SchedulerService:
                 db.commit()
                 expired_count += 1
 
-            # 2. Scheduled Re-evaluation Check
-            elif (retry_after and now >= retry_after and (not expires_at or now < expires_at) 
-                  and case.customer_action_status in ["PENDING", "COMPLETED"]):
-                
+            # 2. Scheduled Re-evaluation Check for RE_EVALUATING or CUSTOMER_ACTION_REQUIRED
+            elif (not retry_after or now >= retry_after) and (not expires_at or now < expires_at):
+                # For customer action, only re-evaluate if pending or completed
+                if case.status == "CUSTOMER_ACTION_REQUIRED" and case.customer_action_status not in ["PENDING", "COMPLETED"]:
+                    continue
+
                 # Idempotency Check: Verify no active run is in progress
                 active_run = db.query(AgentRun).filter(
                     AgentRun.case_id == case.id,
@@ -95,7 +97,7 @@ class SchedulerService:
                     db,
                     "RE-EVALUATION STARTED",
                     "SYSTEM",
-                    f"Scheduled re-evaluation triggered after wait period expired.",
+                    f"Scheduled re-evaluation triggered after wait period expired (Case status was {case.status}).",
                     case_id=case.id
                 )
 
@@ -110,6 +112,7 @@ class SchedulerService:
 
                 execution_service.run_agent_workflow_sync(new_run.id)
                 reevaluated_count += 1
+
 
         return {
             "expired_cases": expired_count,

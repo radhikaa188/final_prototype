@@ -79,7 +79,7 @@ export const AgentExecution: React.FC = () => {
             rawData = rawData.substring(6).trim();
           }
           const payload = JSON.parse(rawData);
-          
+
           if (payload.event === 'COMPLETE') {
             setIsCompleted(true);
             setFinalResult(payload.final_result || 'COMPLETED');
@@ -226,20 +226,19 @@ export const AgentExecution: React.FC = () => {
             } else if (stepData?.output) {
               outputObj = stepData.output;
             }
-          } catch (e) {}
+          } catch (e) { }
 
           return (
             <div
               key={sObj.name}
-              className={`glass-panel rounded-xl border transition-all duration-200 ${
-                isCurrent
+              className={`glass-panel rounded-xl border transition-all duration-200 ${isCurrent
                   ? 'border-purple-300 bg-purple-50/40 shadow-sm'
                   : isDone
-                  ? 'border-slate-200 bg-white'
-                  : isBlocked
-                  ? 'border-rose-200 bg-rose-50/40'
-                  : 'border-slate-100 bg-slate-50/50 opacity-60'
-              }`}
+                    ? 'border-slate-200 bg-white'
+                    : isBlocked
+                      ? 'border-rose-200 bg-rose-50/40'
+                      : 'border-slate-100 bg-slate-50/50 opacity-60'
+                }`}
             >
               {/* Step Header Bar */}
               <div
@@ -309,7 +308,7 @@ export const AgentExecution: React.FC = () => {
                         <StatusBadge status={outputObj.action} type="action" />
                       </div>
                       <p className="text-slate-700 text-xs">{outputObj.reason}</p>
-                      <div className="text-[10px] font-mono text-slate-500">Agent Confidence: {((outputObj.confidence || 0.85)*100).toFixed(0)}%</div>
+                      <div className="text-[10px] font-mono text-slate-500">Agent Confidence: {((outputObj.confidence || 0.85) * 100).toFixed(0)}%</div>
                     </div>
                   )}
 

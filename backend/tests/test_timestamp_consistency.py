@@ -12,14 +12,6 @@ from app.auth.init_users import seed_default_users
 
 from app.main import app
 
-@pytest.fixture
-def db():
-    session = SessionLocal()
-    try:
-        yield session
-    finally:
-        session.close()
-
 from app.services.execution_service import execution_service
 
 @pytest.fixture

@@ -1,9 +1,13 @@
 from datetime import datetime, timezone, timedelta
-from typing import Tuple, Dict, Any, List
+from typing import Tuple, Dict, Any, List, Optional
 from sqlalchemy.orm import Session
+from sqlalchemy import func
+from app.config import settings
 from app.db.models import Policy, RecoveryCase, Payment, Customer, RecoveryAction
 
 class PolicyEngine:
+    _demo_reference_time: Optional[datetime] = None
+
     @staticmethod
     def get_active_policy(db: Session) -> Policy:
         policy = db.query(Policy).filter(Policy.id == "default_policy").first()
@@ -22,6 +26,75 @@ class PolicyEngine:
             db.commit()
             db.refresh(policy)
         return policy
+
+    @classmethod
+    def get_stable_demo_reference_time(cls, db: Session) -> datetime:
+        """
+        Derives a stable, deterministic demo reference time from the seeded dataset.
+        Guarantees that identical database state always produces the exact same reference time
+        across page refreshes, API calls, and backend restarts.
+        """
+        if cls._demo_reference_time is not None:
+            return cls._demo_reference_time
+
+        anchor = db.query(func.min(RecoveryCase.created_at)).filter(
+            RecoveryCase.payment_id.in_(
+                db.query(Payment.id).filter(Payment.gateway_payment_id.like("pay_sub%"))
+            )
+        ).scalar()
+        if not anchor:
+            cls._demo_reference_time = datetime(2026, 8, 29, 8, 21, 23, 341168, tzinfo=timezone.utc)
+        else:
+            if anchor.tzinfo is None:
+                anchor = anchor.replace(tzinfo=timezone.utc)
+            cls._demo_reference_time = anchor + timedelta(hours=24)
+        return cls._demo_reference_time
+
+
+    @staticmethod
+    def get_effective_case_age_and_now(
+        db: Session,
+        case: RecoveryCase,
+        payment: Optional[Payment] = None
+    ) -> Tuple[datetime, datetime, float]:
+        """
+        Calculates effective case failure time, effective reference 'now', and failure age in hours.
+        - Production (DEMO_MODE=False): Uses real current UTC time.
+        - Demo Mode (DEMO_MODE=True):
+            * Seeded demo records use stable deterministic demo reference time.
+            * Runtime Test Mode payments & Webhook events use real current UTC time.
+        Strict mathematical consistency:
+            age_hours = (effective_now - fail_time).total_seconds() / 3600.0
+        """
+        is_demo_mode = getattr(settings, "DEMO_MODE", True) and settings.ENVIRONMENT != "production"
+        is_seeded = bool(payment and payment.gateway_payment_id and payment.gateway_payment_id.startswith("pay_sub"))
+
+        real_now = datetime.now(timezone.utc)
+        
+        # Determine failure timestamp directly from stored payment or case created_at
+        fail_time = None
+        if payment and payment.created_at:
+            fail_time = payment.created_at
+        elif case and case.created_at:
+            fail_time = case.created_at
+        else:
+            fail_time = real_now
+
+        if fail_time.tzinfo is None:
+            fail_time = fail_time.replace(tzinfo=timezone.utc)
+
+        # 1. Real production or runtime Test Mode / Webhook payment
+        if not is_demo_mode or not is_seeded:
+            effective_now = real_now
+            age_hours = max(0.0, (effective_now - fail_time).total_seconds() / 3600.0)
+            return fail_time, effective_now, age_hours
+
+        # 2. Seeded static demo record in Demo Mode
+        demo_now = PolicyEngine.get_stable_demo_reference_time(db)
+        age_hours = max(0.0, (demo_now - fail_time).total_seconds() / 3600.0)
+
+        return fail_time, demo_now, age_hours
+
 
     @staticmethod
     def classify_customer_action_requirement(failure_reason: str, root_cause: str = None) -> Tuple[bool, str, str]:
@@ -80,16 +153,19 @@ class PolicyEngine:
             checks["customer_opt_out"] = {"passed": False, "details": "Customer has opted out of automated communications"}
             return False, "BLOCKED: Customer opted out of automatic recovery", checks
 
-        # 3. Recovery window check
-        if case.created_at:
-            created_at = case.created_at
-            if created_at.tzinfo is None:
-                created_at = created_at.replace(tzinfo=timezone.utc)
-            now = datetime.now(timezone.utc)
-            window_end = created_at + timedelta(hours=policy.recovery_window_hours)
-            if now > window_end:
-                checks["recovery_window"] = {"passed": False, "details": f"Case expired after {policy.recovery_window_hours} hours"}
-                return False, f"BLOCKED: Recovery window of {policy.recovery_window_hours} hours has elapsed", checks
+        # 3. Recovery window check (72-hour Recovery SLA)
+        effective_time, effective_now, age_hours = PolicyEngine.get_effective_case_age_and_now(db, case, payment)
+        if age_hours > policy.recovery_window_hours:
+            checks["recovery_window"] = {
+                "passed": False,
+                "details": f"Failure age ({age_hours:.1f}h) exceeds policy limit of {policy.recovery_window_hours}h"
+            }
+            return False, f"BLOCKED: Recovery window of {policy.recovery_window_hours} hours has elapsed", checks
+        else:
+            checks["recovery_window"] = {
+                "passed": True,
+                "details": f"Failure age ({age_hours:.1f}h) within {policy.recovery_window_hours}h limit"
+            }
 
         # 4. Retry limit check (for RETRY action)
         if action_type == "RETRY":
@@ -115,3 +191,4 @@ class PolicyEngine:
         return True, "ALLOWED: Action complies with all active operational policies", checks
 
 policy_engine = PolicyEngine()
+

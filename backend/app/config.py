@@ -20,6 +20,10 @@ class Settings:
     DATABASE_URL: str = os.getenv("DATABASE_URL", f"sqlite:///{DB_PATH}")
     MODEL_DIR: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ml", "saved_models")
     
+    # Environment & Demo settings
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
+    DEMO_MODE: bool = os.getenv("DEMO_MODE", "true").lower() in ("true", "1", "yes")
+
     # Webhook cryptographic secret
     RAZORPAY_WEBHOOK_SECRET: str = os.getenv("RAZORPAY_WEBHOOK_SECRET", "whsec_recoverai_test_secret_key_12345")
 
@@ -30,7 +34,7 @@ class Settings:
     # JWT Authentication & Authorization Settings (Strictly loaded from environment)
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "")
     JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
-    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "10080"))
 
     # CORS Allowed Origins
     DEFAULT_CORS_ORIGINS: list = [

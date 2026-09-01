@@ -1,9 +1,53 @@
+# Environment / secrets
 .env
-backend/.env
+.env.*
+!.env.example
+
+# Python virtual environments
 venv/
-node_modules/
+.venv/
+
+# Python cache
 __pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node dependencies / build output
+node_modules/
+dist/
+.vite/
+
+# Logs
+*.log
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.temp
+
+# SQLite runtime files
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Scratch / temporary investigation files
+scratch/
+
+# Backup databases
+*_backup_*.db
+*before_reset*.db
+*before_test_cleanup*.db
+*current_before_restore*.db
+
 backend/data/billing.csv
+backend/data/payment_failure.csv
+backend/data/recovery_action_training.csv
 backend/data/subscribers.csv
 backend/data/support_tickets.csv
-backend/data/payment_failure.csv

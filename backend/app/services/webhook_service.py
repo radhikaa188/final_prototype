@@ -1,7 +1,7 @@
 import hmac
 import hashlib
 import random
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Tuple
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -9,7 +9,10 @@ from app.config import settings
 from app.db.models import Customer, Payment, RecoveryCase, WebhookEvent
 from app.ml.predictor import predictor
 from app.agents.recovery_agent import recovery_agent
+from app.policies.guardrails import policy_engine
 from app.services.audit_service import audit_service
+
+
 
 
 class WebhookService:
@@ -192,15 +195,37 @@ class WebhookService:
             created_at=datetime.now(timezone.utc)
         )
 
-        # Step 9: Recovery Agent Evaluation
+        # Step 9: Recovery Agent Evaluation & Workflow Routing
         rec_action, agent_reason, agent_conf = recovery_agent.evaluate_case(db, case)
         case.recommended_action = rec_action
         case.agent_confidence = agent_conf
-        case.next_action = rec_action
-        case.status = "PRIORITIZED"
+
+        is_cust_req, act_type, act_desc = policy_engine.classify_customer_action_requirement(fail_reason, cause)
+        if is_cust_req:
+            policy = policy_engine.get_active_policy(db)
+            now = datetime.now(timezone.utc)
+            case.status = "CUSTOMER_ACTION_REQUIRED"
+            case.customer_action_required = True
+            case.customer_action_type = act_type
+            case.customer_action_status = "PENDING"
+            case.customer_action_description = act_desc
+            case.waiting_since = now
+            case.retry_after = now + timedelta(hours=policy.customer_action_wait_hours)
+            case.expires_at = now + timedelta(hours=policy.customer_action_expire_hours)
+            case.next_action = "WAIT_FOR_CUSTOMER_ACTION"
+        elif rec_action == "HUMAN_REVIEW":
+            case.status = "ESCALATED"
+            case.next_action = "HUMAN_REVIEW"
+        elif rec_action == "STOP":
+            case.status = "STOPPED"
+            case.next_action = "NONE"
+        else:
+            case.status = "PRIORITIZED"
+            case.next_action = rec_action
 
         db.add(case)
         db.flush()
+
 
         # Step 10: Persist Webhook Event for Idempotency Tracking
         web_evt = WebhookEvent(

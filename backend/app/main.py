@@ -1,33 +1,43 @@
+import asyncio
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.db.session import engine, Base, SessionLocal
 from app.db import models
 from app.auth.init_users import seed_default_users
+from app.services.scheduler_service import scheduler_service
 
 # Ensure tables exist and seed demo users
 Base.metadata.create_all(bind=engine)
 with SessionLocal() as db_session:
     seed_default_users(db_session)
 
-from app.api.auth import router as auth_router
-from app.api.dashboard import router as dashboard_router
-from app.api.payments import router as payments_router
-from app.api.customers import router as customers_router
-from app.api.recovery_cases import router as recovery_cases_router
-from app.api.agent import router as agent_router
-from app.api.analytics import router as analytics_router
-from app.api.audit import router as audit_router
-from app.api.policies import router as policies_router
-from app.api.notifications import router as notifications_router
-from app.api.test_mode import router as test_mode_router
-from app.api.webhooks import router as webhooks_router
+async def background_scheduler_worker():
+    """
+    Continuous background loop that wakes up periodically to execute due recovery retries and customer action expirations.
+    """
+    while True:
+        try:
+            with SessionLocal() as db_session:
+                scheduler_service.process_customer_action_lifecycle(db_session)
+        except Exception:
+            pass
+        await asyncio.sleep(5)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(background_scheduler_worker())
+    yield
+    task.cancel()
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
-    openapi_url="/api/openapi.json"
+    openapi_url="/api/openapi.json",
+    lifespan=lifespan
 )
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -45,8 +55,22 @@ app.add_middleware(
     ],
 )
 
+from app.api.auth import router as auth_router
+from app.api.dashboard import router as dashboard_router
+from app.api.payments import router as payments_router
+from app.api.customers import router as customers_router
+from app.api.recovery_cases import router as recovery_cases_router
+from app.api.agent import router as agent_router
+from app.api.analytics import router as analytics_router
+from app.api.audit import router as audit_router
+from app.api.policies import router as policies_router
+from app.api.notifications import router as notifications_router
+from app.api.test_mode import router as test_mode_router
+from app.api.webhooks import router as webhooks_router
+
 # Register routers under /api
 app.include_router(auth_router, prefix=settings.API_V1_STR)
+
 app.include_router(dashboard_router, prefix=settings.API_V1_STR)
 app.include_router(payments_router, prefix=settings.API_V1_STR)
 app.include_router(customers_router, prefix=settings.API_V1_STR)

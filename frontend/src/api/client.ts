@@ -42,7 +42,7 @@ export async function fetchApi<T>(endpoint: string, options?: RequestInit): Prom
       const errorData = await res.json().catch(() => ({ detail: 'An error occurred' }));
       errorDetail = errorData.detail || errorDetail;
     }
-    
+
     // Auto-logout on 401 Unauthorized (unless logging in)
     if (res.status === 401 && !endpoint.includes('/auth/login')) {
       localStorage.removeItem('recoverai_token');

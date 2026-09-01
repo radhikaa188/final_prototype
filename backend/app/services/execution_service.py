@@ -171,7 +171,8 @@ class ExecutionService:
                         }
                     elif action == "RETRY":
                         notification_service.send_notification(db, case.id, customer.id if customer else None, "AUTOMATIC_RETRY_ATTEMPTED", agent_run_id=run_id)
-                        action_result = gateway_simulator.process_retry(payment.gateway_payment_id if payment else "pay_test", case.revenue_at_risk, case.retry_count + 1)
+                        action_result = gateway_simulator.process_retry(payment.gateway_payment_id if payment else "pay_test", case.revenue_at_risk, case.retry_count + 1, original_failure_reason=payment.failure_reason if payment else None)
+
                     elif action == "CUSTOMER_NUDGE":
                         notification_service.send_notification(db, case.id, customer.id if customer else None, "CUSTOMER_NUDGE", agent_run_id=run_id)
                         action_result = gateway_simulator.process_nudge(customer.email if customer else "cust@example.com", case.revenue_at_risk)
@@ -253,15 +254,40 @@ class ExecutionService:
                         agent_run.final_result = "STOPPED"
                     else: # FAILED
                         case.retry_count += 1
+                        now = datetime.now(timezone.utc)
                         if case.retry_count >= 3:
                             case.status = "STOPPED"
+                            case.next_action = "NONE"
+                            case.closed_at = now
                             agent_run.final_result = "STOPPED_MAX_RETRIES"
+                            audit_service.record_event(
+                                db,
+                                "RECOVERY_STOPPED",
+                                "SYSTEM",
+                                f"Maximum recovery attempts ({case.retry_count}/3) reached. Automated recovery stopped.",
+                                case_id=case.id,
+                                agent_run_id=run_id
+                            )
                         else:
                             case.status = "RE_EVALUATING"
+                            case.next_action = "RE_EVALUATE"
                             agent_run.final_result = "RETRY_FAILED"
+                            policy = policy_engine.get_active_policy(db)
+                            backoff_hours = getattr(policy, "retry_backoff_hours", 1)
+                            case.waiting_since = now
+                            case.retry_after = now + timedelta(hours=backoff_hours)
+                            audit_service.record_event(
+                                db,
+                                "RECOVERY_ATTEMPT_FAILED",
+                                "SYSTEM",
+                                f"Recovery attempt #{case.retry_count} failed. Case marked RE_EVALUATING. Next re-evaluation scheduled for {case.retry_after.isoformat()}.",
+                                case_id=case.id,
+                                agent_run_id=run_id
+                            )
 
                     step.output_summary = json.dumps({"new_case_status": case.status, "payment_status": payment.status})
                     step.status = "SUCCESS"
+
 
                 elif step_name == "NOTIFY":
                     if case.status == "RECOVERED":
@@ -463,7 +489,8 @@ class ExecutionService:
                         }
                     elif action == "RETRY":
                         notification_service.send_notification(db, case.id, customer.id if customer else None, "AUTOMATIC_RETRY_ATTEMPTED", agent_run_id=run_id)
-                        action_result = gateway_simulator.process_retry(payment.gateway_payment_id if payment else "pay_test", case.revenue_at_risk, case.retry_count + 1)
+                        action_result = gateway_simulator.process_retry(payment.gateway_payment_id if payment else "pay_test", case.revenue_at_risk, case.retry_count + 1, original_failure_reason=payment.failure_reason if payment else None)
+
                     elif action == "CUSTOMER_NUDGE":
                         notification_service.send_notification(db, case.id, customer.id if customer else None, "CUSTOMER_NUDGE", agent_run_id=run_id)
                         action_result = gateway_simulator.process_nudge(customer.email if customer else "cust@example.com", case.revenue_at_risk)
@@ -541,14 +568,39 @@ class ExecutionService:
                         agent_run.final_result = "STOPPED"
                     else: # FAILED
                         case.retry_count += 1
+                        now = datetime.now(timezone.utc)
                         if case.retry_count >= 3:
                             case.status = "STOPPED"
+                            case.next_action = "NONE"
+                            case.closed_at = now
                             agent_run.final_result = "STOPPED_MAX_RETRIES"
+                            audit_service.record_event(
+                                db,
+                                "RECOVERY_STOPPED",
+                                "SYSTEM",
+                                f"Maximum recovery attempts ({case.retry_count}/3) reached. Automated recovery stopped.",
+                                case_id=case.id,
+                                agent_run_id=run_id
+                            )
                         else:
                             case.status = "RE_EVALUATING"
+                            case.next_action = "RE_EVALUATE"
                             agent_run.final_result = "RETRY_FAILED"
+                            policy = policy_engine.get_active_policy(db)
+                            backoff_hours = getattr(policy, "retry_backoff_hours", 1)
+                            case.waiting_since = now
+                            case.retry_after = now + timedelta(hours=backoff_hours)
+                            audit_service.record_event(
+                                db,
+                                "RECOVERY_ATTEMPT_FAILED",
+                                "SYSTEM",
+                                f"Recovery attempt #{case.retry_count} failed. Case marked RE_EVALUATING. Next re-evaluation scheduled for {case.retry_after.isoformat()}.",
+                                case_id=case.id,
+                                agent_run_id=run_id
+                            )
 
                     output_data = {"new_case_status": case.status, "payment_status": payment.status, "recovered_amount": action_result.get("amount_recovered", 0.0) if action_result else 0.0}
+
 
                 elif step_name == "NOTIFY":
                     if case.status == "RECOVERED":

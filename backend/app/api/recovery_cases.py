@@ -29,16 +29,34 @@ def list_recovery_cases(
     query = db.query(RecoveryCase)
 
     if status:
-        if status == "HIGH_PRIORITY":
-            query = query.filter(RecoveryCase.priority_score >= 50.0)
-        elif status == "NEEDS_REVIEW":
+        status_upper = status.upper()
+        if status_upper == "ALL":
+            pass  # No status filter
+        elif status_upper in ("ACTIVE", "ALL_ACTIVE"):
+            query = query.filter(RecoveryCase.status.in_(["PRIORITIZED", "CUSTOMER_ACTION_REQUIRED", "ESCALATED", "RE_EVALUATING", "OPEN", "EXECUTING"]))
+        elif status_upper == "HIGH_PRIORITY":
+            query = query.filter(
+                RecoveryCase.status.in_(["PRIORITIZED", "CUSTOMER_ACTION_REQUIRED", "ESCALATED", "RE_EVALUATING", "OPEN", "EXECUTING"]),
+                RecoveryCase.priority_score >= 50.0
+            )
+        elif status_upper in ("NEEDS_REVIEW", "ESCALATED"):
             query = query.filter(RecoveryCase.status == "ESCALATED")
-        elif status == "BLOCKED":
+        elif status_upper in ("BLOCKED", "STOPPED"):
             query = query.filter(RecoveryCase.status == "STOPPED")
-        elif status == "RETRY_READY":
-            query = query.filter(RecoveryCase.recommended_action == "RETRY", RecoveryCase.status != "RECOVERED")
+        elif status_upper == "RETRY_READY":
+            query = query.filter(
+                RecoveryCase.recommended_action == "RETRY",
+                RecoveryCase.status.in_(["PRIORITIZED", "CUSTOMER_ACTION_REQUIRED", "RE_EVALUATING", "OPEN"])
+            )
+        elif status_upper == "RECOVERED":
+            query = query.filter(RecoveryCase.status == "RECOVERED")
+        elif status_upper == "CUSTOMER_ACTION_REQUIRED":
+            query = query.filter(RecoveryCase.status == "CUSTOMER_ACTION_REQUIRED")
         else:
             query = query.filter(RecoveryCase.status == status)
+    else:
+        # Default behavior: Return ACTIVE operational cases only (unresolved cases)
+        query = query.filter(RecoveryCase.status.in_(["PRIORITIZED", "CUSTOMER_ACTION_REQUIRED", "ESCALATED", "RE_EVALUATING", "OPEN", "EXECUTING"]))
 
     if recommended_action:
         query = query.filter(RecoveryCase.recommended_action == recommended_action)
@@ -71,7 +89,15 @@ def list_recovery_cases(
             "priority_score": case.priority_score,
             "root_cause": case.root_cause,
             "recommended_action": case.recommended_action,
+            "next_action": case.next_action,
             "status": case.status,
+            "customer_action_required": case.customer_action_required,
+            "customer_action_type": case.customer_action_type,
+            "customer_action_status": case.customer_action_status,
+            "customer_action_description": case.customer_action_description,
+            "waiting_since": case.waiting_since.isoformat() if case.waiting_since else None,
+            "retry_after": case.retry_after.isoformat() if case.retry_after else None,
+            "expires_at": case.expires_at.isoformat() if case.expires_at else None,
             "retry_count": case.retry_count,
             "created_at": case.created_at.isoformat() if case.created_at else None
         })
@@ -104,7 +130,10 @@ def get_case_detail(case_id: str, db: Session = Depends(get_db), current_user: U
     return {
         "id": case.id,
         "status": case.status,
+        "next_action": case.next_action,
+        "recommended_action": case.recommended_action,
         "payment": {
+
             "id": payment.id if payment else None,
             "gateway_payment_id": payment.gateway_payment_id if payment else None,
             "amount": payment.amount if payment else case.revenue_at_risk,
@@ -364,24 +393,37 @@ def reevaluate_recovery_case(case_id: str, db: Session = Depends(get_db), curren
     # Backend Timing Enforcement
     now = datetime.now(timezone.utc)
     retry_after = case.retry_after
-
-    if not retry_after:
-        raise HTTPException(
-            status_code=400,
-            detail="No re-evaluation scheduled for this case."
-        )
-
-    if retry_after.tzinfo is None:
+    if retry_after and retry_after.tzinfo is None:
         retry_after = retry_after.replace(tzinfo=timezone.utc)
-
-    if now < retry_after:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Re-evaluation is not due yet. Next re-evaluation: {retry_after.isoformat()}"
-        )
 
     operator_label = f"{current_user.name or current_user.email} ({current_user.role})"
 
+    if case.status == "CUSTOMER_ACTION_REQUIRED":
+        if retry_after and now < retry_after:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Re-evaluation is not due yet. Next re-evaluation: {retry_after.isoformat()}"
+            )
+
+    # Case B — retry_after is still in the future for RE_EVALUATING cases: DO NOT EXECUTE EARLY
+    if case.status == "RE_EVALUATING" and retry_after and now < retry_after:
+        audit_service.record_event(
+            db,
+            "RETRY_SCHEDULED",
+            "HUMAN",
+            f"Employee ({operator_label}) scheduled recovery retry for {retry_after.isoformat()}. Autonomous recovery will execute when the retry window opens.",
+            case_id=case.id
+        )
+        db.commit()
+        return {
+            "status": "SCHEDULED",
+            "case_id": case.id,
+            "case_status": case.status,
+            "retry_after": retry_after.isoformat(),
+            "message": f"Retry scheduled for {retry_after.isoformat()}. Backend scheduler will execute automatically when the retry window opens."
+        }
+
+    # Case A — retry_after already reached or not set: execute immediately
     audit_service.record_event(
         db,
         "RE-EVALUATION STARTED",
@@ -390,7 +432,7 @@ def reevaluate_recovery_case(case_id: str, db: Session = Depends(get_db), curren
         case_id=case.id
     )
 
-    # Idempotency check
+    # Idempotency check: in-flight run
     active_run = db.query(AgentRun).filter(AgentRun.case_id == case.id, AgentRun.status.in_(["PENDING", "RUNNING"])).first()
     if active_run:
         return {"run_id": active_run.id, "case_id": case.id, "status": "RE_EVALUATING", "message": "Active run already in progress."}
@@ -403,7 +445,16 @@ def reevaluate_recovery_case(case_id: str, db: Session = Depends(get_db), curren
     execution_service.run_agent_workflow_sync(new_run.id)
     db.refresh(case)
 
-    return {"run_id": new_run.id, "case_id": case.id, "case_status": case.status, "customer_action_status": case.customer_action_status}
+    return {
+        "run_id": new_run.id,
+        "case_id": case.id,
+        "case_status": case.status,
+        "customer_action_status": case.customer_action_status,
+        "status": "COMPLETED",
+        "message": "Re-evaluation executed immediately."
+    }
+
+
 
 @router.post("/{case_id}/what-if")
 def run_what_if_simulation(case_id: str, payload: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):

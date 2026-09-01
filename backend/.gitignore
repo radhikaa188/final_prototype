@@ -1,0 +1,35 @@
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Pytest / tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# SQLite runtime files
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Local IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

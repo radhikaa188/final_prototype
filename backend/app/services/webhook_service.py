@@ -200,8 +200,16 @@ class WebhookService:
         case.recommended_action = rec_action
         case.agent_confidence = agent_conf
 
+        # 1. Routing Precedence:
+        # A) Explicit Fraud / Suspicious / High-Risk -> Direct ESCALATED to Human Review
+        is_fraud, risk_level, risk_desc = policy_engine.classify_fraud_or_risk_requirement(fail_reason, cause)
         is_cust_req, act_type, act_desc = policy_engine.classify_customer_action_requirement(fail_reason, cause)
-        if is_cust_req:
+
+        if is_fraud or rec_action == "HUMAN_REVIEW":
+            case.status = "ESCALATED"
+            case.recommended_action = "HUMAN_REVIEW"
+            case.next_action = "HUMAN_REVIEW"
+        elif is_cust_req:
             policy = policy_engine.get_active_policy(db)
             now = datetime.now(timezone.utc)
             case.status = "CUSTOMER_ACTION_REQUIRED"
@@ -213,9 +221,6 @@ class WebhookService:
             case.retry_after = now + timedelta(hours=policy.customer_action_wait_hours)
             case.expires_at = now + timedelta(hours=policy.customer_action_expire_hours)
             case.next_action = "WAIT_FOR_CUSTOMER_ACTION"
-        elif rec_action == "HUMAN_REVIEW":
-            case.status = "ESCALATED"
-            case.next_action = "HUMAN_REVIEW"
         elif rec_action == "STOP":
             case.status = "STOPPED"
             case.next_action = "NONE"
@@ -226,8 +231,26 @@ class WebhookService:
         db.add(case)
         db.flush()
 
+        from app.services.notification_service import notification_service
+        if is_fraud or rec_action == "HUMAN_REVIEW":
+            notification_service.send_notification(
+                db=db,
+                case_id=case.id,
+                customer_id=customer.id,
+                type_="HUMAN_REVIEW_REQUIRED",
+                reason=risk_desc if is_fraud else "Case routed to Human Operations review"
+            )
+        elif is_cust_req:
+            notification_service.send_notification(
+                db=db,
+                case_id=case.id,
+                customer_id=customer.id,
+                type_="CUSTOMER_ACTION_REQUIRED"
+            )
 
         # Step 10: Persist Webhook Event for Idempotency Tracking
+
+
         web_evt = WebhookEvent(
             event_id=event_id,
             event_type=event_type,

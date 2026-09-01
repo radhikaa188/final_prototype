@@ -7,14 +7,27 @@ from app.auth.dependencies import get_current_user
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
+ACTIVE_STATUSES = [
+    "OPEN",
+    "DIAGNOSED",
+    "PRIORITIZED",
+    "CUSTOMER_ACTION_REQUIRED",
+    "ACTION_PROPOSED",
+    "AWAITING_APPROVAL",
+    "APPROVED",
+    "EXECUTING",
+    "RE_EVALUATING",
+    "ESCALATED"
+]
+
 @router.get("/summary")
 def get_dashboard_summary(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     # Revenue at Risk = sum of failed payment amounts
     revenue_at_risk = db.query(func.sum(RecoveryCase.revenue_at_risk)).scalar() or 0.0
     
-    # Recoverable Revenue = sum of expected_recovery across open/prioritized/executing cases
+    # Recoverable Revenue = sum of expected_recovery across unresolved operational cases
     recoverable_revenue = db.query(func.sum(RecoveryCase.expected_recovery)).filter(
-        RecoveryCase.status.in_(["OPEN", "DIAGNOSED", "PRIORITIZED", "ACTION_PROPOSED", "AWAITING_APPROVAL", "APPROVED", "EXECUTING", "RE_EVALUATING"])
+        RecoveryCase.status.in_(ACTIVE_STATUSES)
     ).scalar() or 0.0
 
     # Revenue Recovered = sum of amount_recovered where action status is SUCCESS
@@ -25,10 +38,11 @@ def get_dashboard_summary(db: Session = Depends(get_db), current_user: User = De
     # Recovery Rate = recovered / revenue_at_risk
     recovery_rate = (revenue_recovered / revenue_at_risk) if revenue_at_risk > 0 else 0.0
 
-    # Active Recovery Cases count
+    # Active Recovery Cases count (all non-terminal unresolved cases)
     active_cases = db.query(RecoveryCase).filter(
-        RecoveryCase.status.in_(["OPEN", "DIAGNOSED", "PRIORITIZED", "ACTION_PROPOSED", "AWAITING_APPROVAL", "APPROVED", "EXECUTING", "RE_EVALUATING", "ESCALATED"])
+        RecoveryCase.status.in_(ACTIVE_STATUSES)
     ).count()
+
 
     total_cases = db.query(RecoveryCase).count()
 

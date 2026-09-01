@@ -97,6 +97,24 @@ class PolicyEngine:
 
 
     @staticmethod
+    def classify_fraud_or_risk_requirement(failure_reason: str, root_cause: str = None) -> Tuple[bool, str, str]:
+        """
+        Classifies payment telemetry to determine if direct Human Review / Escalation is required due to fraud/risk.
+        Returns: (is_fraud_or_risk: bool, risk_level: str, reason_description: str)
+        """
+        reason_upper = str(failure_reason or "").upper()
+        root_upper = str(root_cause or "").upper()
+
+        if "FRAUD" in reason_upper or "FRAUD_SUSPECTED" in reason_upper or "FRAUD_RISK" in reason_upper or root_upper == "FRAUD_SUSPECTED" or "FRAUD" in root_upper:
+            return True, "HIGH", "Fraud suspected by payment risk engine. Automatic retries blocked pending Human Review."
+        elif "SUSPICIOUS" in reason_upper or "SECURITY_VIOLATION" in reason_upper or "STOLEN_CARD" in reason_upper or "LOST_CARD" in reason_upper or "PICKUP_CARD" in reason_upper:
+            return True, "HIGH", "Suspicious payment activity or stolen/lost card security flag detected."
+        elif "VELOCITY_EXCEEDED" in reason_upper or "RESTRICTED_CARD" in reason_upper or "CARD_RESTRICTED" in reason_upper or "HIGH_RISK" in reason_upper:
+            return True, "HIGH", "Card velocity limits or high-risk security restrictions flagged by issuing bank."
+
+        return False, "LOW", "No high-risk fraud flag detected."
+
+    @staticmethod
     def classify_customer_action_requirement(failure_reason: str, root_cause: str = None) -> Tuple[bool, str, str]:
         """
         Classifies payment decline telemetry to determine if customer intervention is required.
@@ -124,7 +142,8 @@ class PolicyEngine:
     def validate_action(
         db: Session,
         case: RecoveryCase,
-        action_type: str
+        action_type: str,
+        is_manual_approval: bool = False
     ) -> Tuple[bool, str, Dict[str, Any]]:
         """
         Validates an agent's proposed action against operational policies.
@@ -140,6 +159,7 @@ class PolicyEngine:
             "max_auto_retry_amount": {"passed": True, "details": f"${case.revenue_at_risk:,.2f} <= ${policy.max_auto_retry_amount:,.2f}"},
             "customer_opt_out": {"passed": True, "details": "Customer active (not opted out)"},
             "duplicate_action": {"passed": True, "details": "Action path clear"},
+            "fraud_risk": {"passed": True, "details": "Risk level compliant"},
             "payment_status": {"passed": True, "details": f"Current payment status: {payment.status if payment else 'UNKNOWN'}"}
         }
 
@@ -148,12 +168,20 @@ class PolicyEngine:
             checks["payment_status"] = {"passed": False, "details": "Payment is already successful"}
             return False, "BLOCKED: Payment is already resolved as SUCCESS", checks
 
-        # 2. Customer opt-out check
+        # 2. Fraud / Suspicious payment check (Blocks automated retries before Human Review)
+        is_fraud, risk_lvl, risk_msg = PolicyEngine.classify_fraud_or_risk_requirement(
+            payment.failure_reason if payment else None, case.root_cause
+        )
+        if is_fraud and action_type == "RETRY" and not is_manual_approval:
+            checks["fraud_risk"] = {"passed": False, "details": "Automatic retry blocked for fraud/suspicious payment"}
+            return False, "BLOCKED: Fraud/suspicious payment requires Human Review before retry", checks
+
+        # 3. Customer opt-out check
         if policy.customer_opt_out_enabled and customer and customer.opted_out:
             checks["customer_opt_out"] = {"passed": False, "details": "Customer has opted out of automated communications"}
             return False, "BLOCKED: Customer opted out of automatic recovery", checks
 
-        # 3. Recovery window check (72-hour Recovery SLA)
+        # 4. Recovery window check (72-hour Recovery SLA)
         effective_time, effective_now, age_hours = PolicyEngine.get_effective_case_age_and_now(db, case, payment)
         if age_hours > policy.recovery_window_hours:
             checks["recovery_window"] = {
@@ -167,7 +195,7 @@ class PolicyEngine:
                 "details": f"Failure age ({age_hours:.1f}h) within {policy.recovery_window_hours}h limit"
             }
 
-        # 4. Retry limit check (for RETRY action)
+        # 5. Retry limit check (for RETRY action)
         if action_type == "RETRY":
             if case.retry_count >= policy.max_retries:
                 checks["retry_limit"] = {"passed": False, "details": f"Maximum retry limit ({policy.max_retries}) reached"}
@@ -177,7 +205,7 @@ class PolicyEngine:
                 checks["max_auto_retry_amount"] = {"passed": False, "details": f"Amount ${case.revenue_at_risk:,.2f} exceeds auto-retry limit (${policy.max_auto_retry_amount:,.2f})"}
                 return False, f"BLOCKED: Amount exceeds maximum automatic retry limit of ${policy.max_auto_retry_amount:,.2f}", checks
 
-        # 5. Duplicate action check
+        # 6. Duplicate action check
         if policy.duplicate_action_protection:
             recent_same_action = db.query(RecoveryAction).filter(
                 RecoveryAction.case_id == case.id,
@@ -191,4 +219,5 @@ class PolicyEngine:
         return True, "ALLOWED: Action complies with all active operational policies", checks
 
 policy_engine = PolicyEngine()
+
 

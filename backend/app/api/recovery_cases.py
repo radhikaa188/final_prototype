@@ -12,8 +12,23 @@ from app.policies.guardrails import policy_engine
 from app.services.audit_service import audit_service
 from app.services.execution_service import execution_service
 from app.services.explainability_service import explainability_service
+from app.services.notification_service import notification_service
+
 
 router = APIRouter(prefix="/recovery-cases", tags=["recovery-cases"])
+
+ACTIVE_STATUSES = [
+    "OPEN",
+    "DIAGNOSED",
+    "PRIORITIZED",
+    "CUSTOMER_ACTION_REQUIRED",
+    "ACTION_PROPOSED",
+    "AWAITING_APPROVAL",
+    "APPROVED",
+    "EXECUTING",
+    "RE_EVALUATING",
+    "ESCALATED"
+]
 
 @router.get("")
 def list_recovery_cases(
@@ -33,10 +48,10 @@ def list_recovery_cases(
         if status_upper == "ALL":
             pass  # No status filter
         elif status_upper in ("ACTIVE", "ALL_ACTIVE"):
-            query = query.filter(RecoveryCase.status.in_(["PRIORITIZED", "CUSTOMER_ACTION_REQUIRED", "ESCALATED", "RE_EVALUATING", "OPEN", "EXECUTING"]))
+            query = query.filter(RecoveryCase.status.in_(ACTIVE_STATUSES))
         elif status_upper == "HIGH_PRIORITY":
             query = query.filter(
-                RecoveryCase.status.in_(["PRIORITIZED", "CUSTOMER_ACTION_REQUIRED", "ESCALATED", "RE_EVALUATING", "OPEN", "EXECUTING"]),
+                RecoveryCase.status.in_(ACTIVE_STATUSES),
                 RecoveryCase.priority_score >= 50.0
             )
         elif status_upper in ("NEEDS_REVIEW", "ESCALATED"):
@@ -46,7 +61,7 @@ def list_recovery_cases(
         elif status_upper == "RETRY_READY":
             query = query.filter(
                 RecoveryCase.recommended_action == "RETRY",
-                RecoveryCase.status.in_(["PRIORITIZED", "CUSTOMER_ACTION_REQUIRED", "RE_EVALUATING", "OPEN"])
+                RecoveryCase.status.in_(ACTIVE_STATUSES)
             )
         elif status_upper == "RECOVERED":
             query = query.filter(RecoveryCase.status == "RECOVERED")
@@ -56,7 +71,8 @@ def list_recovery_cases(
             query = query.filter(RecoveryCase.status == status)
     else:
         # Default behavior: Return ACTIVE operational cases only (unresolved cases)
-        query = query.filter(RecoveryCase.status.in_(["PRIORITIZED", "CUSTOMER_ACTION_REQUIRED", "ESCALATED", "RE_EVALUATING", "OPEN", "EXECUTING"]))
+        query = query.filter(RecoveryCase.status.in_(ACTIVE_STATUSES))
+
 
     if recommended_action:
         query = query.filter(RecoveryCase.recommended_action == recommended_action)
@@ -257,6 +273,14 @@ def approve_recovery_case(case_id: str, payload: dict = None, db: Session = Depe
         case_id=case.id, 
         agent_run_id=agent_run.id
     )
+    notification_service.send_notification(
+        db=db,
+        case_id=case.id,
+        customer_id=case.customer_id,
+        type_="HUMAN_APPROVED",
+        reason=f"Employee ({operator_label}) approved recovery action: {action}",
+        agent_run_id=agent_run.id
+    )
     db.commit()
 
     # Execute workflow synchronously
@@ -326,6 +350,13 @@ def reject_recovery_case(case_id: str, db: Session = Depends(get_db), current_us
     db.commit()
 
     audit_service.record_event(db, "HUMAN_REJECTION", "HUMAN", f"Employee ({operator_label}) rejected recovery action. Recovery stopped.", case_id=case.id)
+    notification_service.send_notification(
+        db=db,
+        case_id=case.id,
+        customer_id=case.customer_id,
+        type_="HUMAN_REJECTED",
+        reason=f"Employee ({operator_label}) rejected recovery action. Case stopped."
+    )
 
     return {"case_id": case.id, "status": "STOPPED"}
 
@@ -344,6 +375,13 @@ def escalate_recovery_case(case_id: str, db: Session = Depends(get_db), current_
     db.commit()
 
     audit_service.record_event(db, "CASE_ESCALATED", "HUMAN", f"Employee ({operator_label}) escalated case for senior human review.", case_id=case.id)
+    notification_service.send_notification(
+        db=db,
+        case_id=case.id,
+        customer_id=case.customer_id,
+        type_="HUMAN_REVIEW_REQUIRED",
+        reason=f"Employee ({operator_label}) escalated case for senior human review."
+    )
 
     return {"case_id": case.id, "status": "ESCALATED"}
 
@@ -368,6 +406,13 @@ def complete_customer_action(case_id: str, payload: dict = None, db: Session = D
         "HUMAN",
         f"Employee ({operator_label}) marked underlying customer payment issue as resolved. Payment remains unrecovered until agent re-evaluation.",
         case_id=case.id
+    )
+    notification_service.send_notification(
+        db=db,
+        case_id=case.id,
+        customer_id=case.customer_id,
+        type_="CUSTOMER_ACTION_COMPLETED",
+        reason=f"Customer completed required payment action: {action_type}. Ready for re-evaluation."
     )
     db.commit()
     db.refresh(case)
@@ -414,6 +459,13 @@ def reevaluate_recovery_case(case_id: str, db: Session = Depends(get_db), curren
             f"Employee ({operator_label}) scheduled recovery retry for {retry_after.isoformat()}. Autonomous recovery will execute when the retry window opens.",
             case_id=case.id
         )
+        notification_service.send_notification(
+            db=db,
+            case_id=case.id,
+            customer_id=case.customer_id,
+            type_="RETRY_SCHEDULED",
+            reason=f"Employee ({operator_label}) scheduled recovery retry for {retry_after.isoformat()}."
+        )
         db.commit()
         return {
             "status": "SCHEDULED",
@@ -424,6 +476,7 @@ def reevaluate_recovery_case(case_id: str, db: Session = Depends(get_db), curren
         }
 
     # Case A — retry_after already reached or not set: execute immediately
+
     audit_service.record_event(
         db,
         "RE-EVALUATION STARTED",

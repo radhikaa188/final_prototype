@@ -142,7 +142,8 @@ class ExecutionService:
 
                 elif step_name == "CHECK_GUARDRAILS":
                     action = agent_run.recommended_action or "RETRY"
-                    allowed, reason, checks = policy_engine.validate_action(db, case, action)
+                    is_manual = agent_run.trigger_type in ("MANUAL_APPROVE", "MANUAL_EXECUTE")
+                    allowed, reason, checks = policy_engine.validate_action(db, case, action, is_manual_approval=is_manual)
                     guardrail_passed = allowed
                     step.output_summary = json.dumps({"allowed": allowed, "reason": reason, "checks": checks})
                     step.status = "SUCCESS" if allowed else "BLOCKED"
@@ -153,6 +154,14 @@ class ExecutionService:
                         if case.status != "RECOVERED":
                             case.status = "STOPPED"
                             case.closed_at = datetime.now(timezone.utc)
+                        notification_service.send_notification(
+                            db,
+                            case.id,
+                            customer.id if customer else None,
+                            "POLICY_BLOCKED",
+                            reason=reason,
+                            agent_run_id=run_id
+                        )
                         db.commit()
                         break
 
@@ -458,7 +467,8 @@ class ExecutionService:
 
                 elif step_name == "CHECK_GUARDRAILS":
                     action = agent_run.recommended_action or "RETRY"
-                    allowed, reason, checks = policy_engine.validate_action(db, case, action)
+                    is_manual = agent_run.trigger_type in ("MANUAL_APPROVE", "MANUAL_EXECUTE")
+                    allowed, reason, checks = policy_engine.validate_action(db, case, action, is_manual_approval=is_manual)
                     output_data = {"allowed": allowed, "reason": reason, "checks": checks}
                     audit_service.record_event(db, "POLICY_GUARDRAILS_VALIDATED", "POLICY_ENGINE", f"Policy / guardrails validated: proposal to {action} was {'APPROVED' if allowed else 'BLOCKED'} ({reason})", case_id=case.id, agent_run_id=run_id)
                     if not allowed:
@@ -470,6 +480,14 @@ class ExecutionService:
                         if case.status != "RECOVERED":
                             case.status = "STOPPED"
                             case.closed_at = datetime.now(timezone.utc)
+                        notification_service.send_notification(
+                            db,
+                            case.id,
+                            customer.id if customer else None,
+                            "POLICY_BLOCKED",
+                            reason=reason,
+                            agent_run_id=run_id
+                        )
                         db.commit()
                         yield {"data": json.dumps({'run_id': run_id, 'step_name': step_name, 'status': 'BLOCKED', 'output': output_data, 'timestamp': datetime.now(timezone.utc).isoformat()})}
                         break

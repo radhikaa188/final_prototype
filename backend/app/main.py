@@ -67,6 +67,7 @@ from app.api.policies import router as policies_router
 from app.api.notifications import router as notifications_router
 from app.api.test_mode import router as test_mode_router
 from app.api.webhooks import router as webhooks_router
+from app.api.search import router as search_router
 
 # Register routers under /api
 app.include_router(auth_router, prefix=settings.API_V1_STR)
@@ -82,6 +83,8 @@ app.include_router(policies_router, prefix=settings.API_V1_STR)
 app.include_router(notifications_router, prefix=settings.API_V1_STR)
 app.include_router(test_mode_router, prefix=settings.API_V1_STR)
 app.include_router(webhooks_router, prefix=settings.API_V1_STR)
+app.include_router(search_router, prefix=settings.API_V1_STR)
+
 
 @app.get("/health")
 def health_check():

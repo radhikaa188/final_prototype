@@ -152,9 +152,21 @@ export const api = {
   getPolicy: () => fetchApi<any>('/policies'),
   updatePolicy: (policy: any) => fetchApi<any>('/policies', { method: 'PUT', body: JSON.stringify(policy) }),
 
+  // Search
+  search: (q: string) => fetchApi<{
+    query: string;
+    total_results: number;
+    payments: any[];
+    customers: any[];
+    recovery_cases: any[];
+  }>(`/search?q=${encodeURIComponent(q)}`),
+
   // Notifications
-  getNotifications: () => fetchApi<{ total: number; notifications: any[] }>('/notifications'),
+  getNotifications: (limit?: number) => fetchApi<{ total: number; unread_count: number; notifications: any[] }>(`/notifications${limit ? `?limit=${limit}` : ''}`),
+  markNotificationRead: (id: string) => fetchApi<any>(`/notifications/${id}/read`, { method: 'POST' }),
+  markAllNotificationsRead: () => fetchApi<any>('/notifications/mark-all-read', { method: 'POST' }),
 
   // Test Mode
   generateTestPayment: (payload?: any) => fetchApi<any>('/test-mode/generate-payment', { method: 'POST', body: payload ? JSON.stringify(payload) : JSON.stringify({}) }),
 };
+

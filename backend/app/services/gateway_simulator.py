@@ -41,14 +41,14 @@ class SimulatedPaymentGateway:
 
 
     def process_nudge(self, customer_email: str, amount: float) -> Dict[str, Any]:
-        """Simulates customer payment link click and retry"""
+        """Dispatches customer payment link reminder notification"""
         time.sleep(0.2)
         return {
-            "status": "SUCCESS",
+            "status": "CUSTOMER_ACTION_REQUIRED",
             "transaction_id": f"txn_nudge_{random.randint(10000000, 99999999)}",
-            "amount_recovered": amount,
-            "gateway_code": "200_OK",
-            "message": "Customer updated billing method and payment cleared."
+            "amount_recovered": 0.0,
+            "gateway_code": "NUDGE_SENT",
+            "message": "Customer notification dispatched. Awaiting customer action."
         }
 
 gateway_simulator = SimulatedPaymentGateway()

@@ -291,13 +291,12 @@ def test_scenario_7_database_and_dashboard(db: Session, client: TestClient):
     assert updated_summary["revenue_recovered"] == initial_recovered + 320.0
 
 def test_scenario_8_approve_nudge_success(db: Session, client: TestClient):
-    """Test 8: Approve CUSTOMER_NUDGE + Success workflow execution."""
+    """Test 8: Approve CUSTOMER_NUDGE dispatches customer notification and enters CUSTOMER_ACTION_REQUIRED."""
     uid = uuid.uuid4().hex[:8]
     cust = Customer(external_customer_id=f"ext_c8_{uid}", name="Test Customer 8", email=f"cust8_{uid}@example.com", opted_out=False)
     db.add(cust)
     db.commit()
 
-    # Prefix with 'pay_test' to force gateway success simulator
     pay = Payment(customer_id=cust.id, gateway_payment_id=f"pay_test_s8_{uid}", amount=190.0, status="FAILED", failure_reason="GENERIC_DECLINE")
     db.add(pay)
     db.commit()
@@ -318,22 +317,23 @@ def test_scenario_8_approve_nudge_success(db: Session, client: TestClient):
     assert response.status_code == 200
     res_data = response.json()
     assert res_data["run_status"] == "COMPLETED"
-    assert res_data["final_result"] == "RECOVERED"
-    assert res_data["case_status"] == "RECOVERED"
-    assert res_data["payment_status"] == "SUCCESS"
+    assert res_data["final_result"] == "CUSTOMER_ACTION_REQUIRED"
+    assert res_data["case_status"] == "CUSTOMER_ACTION_REQUIRED"
+    assert res_data["payment_status"] == "FAILED"
     assert res_data["approved_action"] == "CUSTOMER_NUDGE"
-    assert res_data["amount_recovered"] == 190.0
+    assert res_data["amount_recovered"] == 0.0
 
     db.refresh(case)
     db.refresh(pay)
-    assert pay.status == "SUCCESS"
-    assert case.status == "RECOVERED"
-    assert case.recommended_action == "CUSTOMER_NUDGE"
+    assert pay.status == "FAILED"
+    assert case.status == "CUSTOMER_ACTION_REQUIRED"
+    assert case.customer_action_status == "PENDING"
+    assert case.customer_action_required is True
 
     # Verify corresponding RecoveryAction
     action = db.query(RecoveryAction).filter(RecoveryAction.case_id == case.id).first()
     assert action is not None
     assert action.action_type == "CUSTOMER_NUDGE"
-    assert action.status == "SUCCESS"
-    assert action.amount_recovered == 190.0
+    assert action.status == "CUSTOMER_ACTION_REQUIRED"
+    assert action.amount_recovered == 0.0
 

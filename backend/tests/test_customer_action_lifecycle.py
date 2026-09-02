@@ -488,3 +488,117 @@ def test_scenario_11_reevaluation_timing_and_simulation_workflow(db):
     assert "PAYMENT_RESULT_RECEIVED" in event_types
     assert "RECOVERED" in event_types
 
+
+def test_regression_reevaluation_without_customer_fix(db):
+    """
+    REGRESSION TEST — RE-EVALUATION WITHOUT CUSTOMER FIX
+    Create a CUSTOMER_ACTION_REQUIRED case.
+    Do NOT call the customer-action completion endpoint.
+    Run automatic re-evaluation.
+    Assert:
+    - payment.status == FAILED
+    - customer_action_status == PENDING
+    - case.status == CUSTOMER_ACTION_REQUIRED
+    - no retry execution occurred
+    - no gateway success occurred
+    - case is still returned by Customer Actions API
+    """
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.auth.security import create_access_token
+    from app.db.models import User
+    from app.auth.init_users import seed_default_users
+
+    seed_default_users(db)
+    ops_user = db.query(User).filter(User.role == "OPS").first()
+    token = create_access_token({"sub": ops_user.id, "email": ops_user.email, "role": ops_user.role})
+
+    client = TestClient(app)
+    client.headers["Authorization"] = f"Bearer {token}"
+
+    uid = uuid.uuid4().hex[:8]
+    cust = Customer(external_customer_id=f"ext_reg_{uid}", name=f"Regression Customer {uid}", email=f"reg_{uid}@example.com", opted_out=False)
+    db.add(cust)
+    db.commit()
+
+    pay = Payment(
+        customer_id=cust.id,
+        gateway_payment_id=f"pay_test_reg_{uid}",
+        amount=250.0,
+        status="FAILED",
+        failure_reason="INSUFFICIENT_FUNDS",
+        failure_category="INSUFFICIENT_FUNDS",
+        attempt_number=1
+    )
+    db.add(pay)
+    db.commit()
+
+    now = datetime.now(timezone.utc)
+    case = RecoveryCase(
+        payment_id=pay.id,
+        customer_id=cust.id,
+        status="CUSTOMER_ACTION_REQUIRED",
+        revenue_at_risk=250.0,
+        recovery_probability=0.70,
+        expected_recovery=175.0,
+        priority_score=175.0,
+        root_cause="CUSTOMER_ACTION",
+        customer_action_required=True,
+        customer_action_type="ADD_FUNDS",
+        customer_action_status="PENDING",
+        customer_action_description="Customer needs to add sufficient funds to their account before payment retry.",
+        waiting_since=now - timedelta(hours=25),
+        retry_after=now - timedelta(hours=1),
+        expires_at=now + timedelta(hours=48),
+        retry_count=0
+    )
+    db.add(case)
+    db.commit()
+
+    # Verify initial state
+    assert pay.status == "FAILED"
+    assert case.customer_action_status == "PENDING"
+    assert case.status == "CUSTOMER_ACTION_REQUIRED"
+
+    # Step 1: Run automatic re-evaluation via scheduler service
+    res_sched = scheduler_service.process_customer_action_lifecycle(db)
+    db.refresh(case)
+    db.refresh(pay)
+
+    # Assertions after automatic re-evaluation:
+    assert pay.status == "FAILED"
+    assert case.customer_action_status == "PENDING"
+    assert case.status == "CUSTOMER_ACTION_REQUIRED"
+    assert case.next_action == "WAIT_FOR_CUSTOMER_ACTION"
+    assert case.retry_count == 0
+
+    # Verify no successful payment / recovery action occurred
+    succ_actions = db.query(RecoveryAction).filter(RecoveryAction.case_id == case.id, RecoveryAction.status == "SUCCESS").count()
+    assert succ_actions == 0
+
+    # Step 2: Also test manual re-evaluate endpoint when due without customer fix
+    case.retry_after = now - timedelta(hours=1)
+    db.commit()
+
+    response = client.post(f"/api/recovery-cases/{case.id}/re-evaluate")
+    assert response.status_code == 200
+    res_json = response.json()
+    assert res_json["case_status"] == "CUSTOMER_ACTION_REQUIRED"
+    assert res_json["customer_action_status"] == "PENDING"
+    assert res_json["payment_status"] == "FAILED"
+
+    db.refresh(case)
+    db.refresh(pay)
+    assert pay.status == "FAILED"
+    assert case.customer_action_status == "PENDING"
+    assert case.status == "CUSTOMER_ACTION_REQUIRED"
+
+    # Step 3: Assert case is still returned by Customer Actions API
+    api_res = client.get("/api/recovery-cases?status=CUSTOMER_ACTION_REQUIRED")
+    assert api_res.status_code == 200
+    returned_cases = api_res.json()["cases"]
+    matching = [c for c in returned_cases if c["id"] == case.id]
+    assert len(matching) == 1
+    assert matching[0]["customer_action_status"] == "PENDING"
+    assert matching[0]["status"] == "CUSTOMER_ACTION_REQUIRED"
+

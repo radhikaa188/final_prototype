@@ -205,7 +205,30 @@ class PolicyEngine:
                 checks["max_auto_retry_amount"] = {"passed": False, "details": f"Amount ${case.revenue_at_risk:,.2f} exceeds auto-retry limit (${policy.max_auto_retry_amount:,.2f})"}
                 return False, f"BLOCKED: Amount exceeds maximum automatic retry limit of ${policy.max_auto_retry_amount:,.2f}", checks
 
-        # 6. Duplicate action check
+        # 6. Customer action completion check (Blocks automated retries if customer action is still PENDING)
+        is_cust_req, act_type, act_desc = PolicyEngine.classify_customer_action_requirement(
+            payment.failure_reason if payment else None, case.root_cause
+        )
+        requires_customer = is_cust_req or case.customer_action_required or case.status == "CUSTOMER_ACTION_REQUIRED"
+        if requires_customer and case.customer_action_status != "COMPLETED":
+            if action_type == "RETRY" and not is_manual_approval:
+                checks["customer_action"] = {
+                    "passed": False,
+                    "details": f"Customer action '{case.customer_action_type or act_type}' is unresolved (PENDING). Automatic retry blocked until customer completes required fix."
+                }
+                return False, f"BLOCKED: Required customer action ({case.customer_action_type or act_type}) is unresolved (PENDING)", checks
+            else:
+                checks["customer_action"] = {
+                    "passed": True,
+                    "details": f"Customer action '{case.customer_action_type or act_type}' is PENDING (non-retry or manual action)."
+                }
+        else:
+            checks["customer_action"] = {
+                "passed": True,
+                "details": "Customer action completed or not required."
+            }
+
+        # 7. Duplicate action check
         if policy.duplicate_action_protection:
             recent_same_action = db.query(RecoveryAction).filter(
                 RecoveryAction.case_id == case.id,

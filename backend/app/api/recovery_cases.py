@@ -497,14 +497,16 @@ def reevaluate_recovery_case(case_id: str, db: Session = Depends(get_db), curren
 
     execution_service.run_agent_workflow_sync(new_run.id)
     db.refresh(case)
+    db.refresh(payment)
 
     return {
         "run_id": new_run.id,
         "case_id": case.id,
         "case_status": case.status,
         "customer_action_status": case.customer_action_status,
+        "payment_status": payment.status if payment else "FAILED",
         "status": "COMPLETED",
-        "message": "Re-evaluation executed immediately."
+        "message": "Re-evaluation executed."
     }
 
 

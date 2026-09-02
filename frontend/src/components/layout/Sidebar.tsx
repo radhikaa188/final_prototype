@@ -65,7 +65,7 @@ export const Sidebar: React.FC = () => {
   );
 
   return (
-    <aside className="w-64 bg-[#0D0D12] border-r border-[#1E1E24] flex flex-col justify-between shrink-0 min-h-screen">
+    <aside className="w-64 bg-[#0D0D12] border-r border-[#1E1E24] flex flex-col justify-between shrink-0 h-screen overflow-y-auto">
       <div>
         {/* Brand Header */}
         <div className="p-6 border-b border-[#1E1E24] flex items-center gap-3">

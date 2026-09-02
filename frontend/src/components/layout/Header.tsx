@@ -246,7 +246,7 @@ export const Header: React.FC = () => {
 
 
   return (
-    <header className="h-16 bg-white border-b border-slate-200 px-8 flex items-center justify-between shrink-0 relative z-30">
+    <header className="h-16 bg-white border-b border-slate-200 px-8 flex items-center justify-between shrink-0 sticky top-0 z-30">
       {/* Breadcrumbs Navigation */}
       <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
         <span className="text-slate-400">Revora AI</span>

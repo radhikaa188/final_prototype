@@ -38,9 +38,9 @@ const AppShell: React.FC = () => {
   }
 
   return (
-    <div className="flex min-h-screen bg-[#F9FAFB] text-slate-900 font-sans">
+    <div className="flex h-screen overflow-hidden bg-[#F9FAFB] text-slate-900 font-sans">
       <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
         <TestModeBanner />
         <Header />
         <main className="flex-1 overflow-y-auto pb-12">

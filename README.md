@@ -34,77 +34,78 @@ Revora AI is built to answer exactly that.
 Revora AI follows a **multi-stage, closed-loop recovery workflow** where every stage contributes to the final decision.
 
 ```text
-                           PAYMENT FAILURE
-                                  │
-                                  ▼
-                         ┌─────────────────┐
-                         │      DETECT     │
-                         │ Ingest + Dedup  │
-                         └────────┬────────┘
-                                  │
-                                  ▼
-                         ┌─────────────────┐
-                         │     DIAGNOSE    │
-                         │ Failure Reason  │
-                         │ Root Cause      │
-                         │ Confidence      │
-                         └────────┬────────┘
-                                  │
-                                  ▼
-                    ┌────────────────────────────┐
-                    │       ML INFERENCE         │
-                    │                            │
-                    │ P(Recovery)                │
-                    │ Action Probabilities       │
-                    │ Expected Recovery          │
-                    └─────────────┬──────────────┘
-                                  │
-                                  ▼
-                    ┌────────────────────────────┐
-                    │        PRIORITIZE          │
-                    │                            │
-                    │ Revenue at Risk            │
-                    │ × P(Recovery)              │
-                    │ = Expected Recovery        │
-                    └─────────────┬──────────────┘
-                                  │
-                                  ▼
-                    ┌────────────────────────────┐
-                    │          DECIDE            │
-                    │                            │
-                    │ What should happen next?   │
-                    └─────────────┬──────────────┘
-                                  │
-                 ┌────────────────┼─────────────────┐
-                 │                │                 │
-                 ▼                ▼                 ▼
-        CUSTOMER ACTION      HUMAN REVIEW      AUTOMATED
-           REQUIRED            REQUIRED          RECOVERY
-                 │                │                 │
-                 ▼                ▼                 ▼
-           CUSTOMER NUDGE      ESCALATE          RETRY
-                 │                │                 │
-                 ▼                │                 ▼
-               WAIT               │            GUARDRAILS
-                 │                │                 │
-                 ▼                │                 ▼
-        CUSTOMER FIXED?           │             EXECUTE
-           /      \               │                 │
-         YES       NO             │                 ▼
-          │         │             │              GATEWAY
-          ▼         ▼             │                 │
-        RETRY      STOP           │                 ▼
-          │                        │             SUCCESS?
-          │                        │            /       \
-          │                        │          YES        NO
-          │                        │           │          │
-          │                        │           ▼          ▼
-          │                        │       RECOVERED  RE-EVALUATING
-          │                        │                       │
-          └────────────────────────┴───────────────────────┘
-                                  │
-                                  ▼
-                       FRESH DECISION CYCLE
+                         PAYMENT FAILURE
+                                │
+                                ▼
+                       ┌─────────────────┐
+                       │      DETECT     │
+                       │ Ingest + Dedup  │
+                       └────────┬────────┘
+                                │
+                                ▼
+                       ┌─────────────────┐
+                       │     DIAGNOSE    │
+                       │ Failure Reason  │
+                       │ Root Cause      │
+                       │ Confidence      │
+                       └────────┬────────┘
+                                │
+                                ▼
+                  ┌────────────────────────────┐
+                  │       ML INFERENCE         │
+                  │                            │
+                  │ P(Recovery)                │
+                  │ Action Probabilities       │
+                  │ Expected Recovery          │
+                  └─────────────┬──────────────┘
+                                │
+                                ▼
+                  ┌────────────────────────────┐
+                  │        PRIORITIZE          │
+                  │                            │
+                  │ Revenue at Risk            │
+                  │ × P(Recovery)              │
+                  │ = Expected Recovery        │
+                  └─────────────┬──────────────┘
+                                │
+                                ▼
+                  ┌────────────────────────────┐
+                  │          DECIDE            │
+                  │                            │
+                  │ What should happen next?   │
+                  └─────────────┬──────────────┘
+                                │
+             ┌──────────────────┼──────────────────┐
+             │                  │                  │
+             ▼                  ▼                  ▼
+      CUSTOMER ACTION       HUMAN REVIEW       AUTOMATED
+         REQUIRED             REQUIRED          RECOVERY
+             │                  │                  │
+             ▼                  ▼                  ▼
+       CUSTOMER NUDGE        ESCALATE            RETRY
+             │                  │                  │
+             ▼                  │                  ▼
+            WAIT                │             GUARDRAILS
+             │                  │                  │
+             ▼                  │                  ▼
+    CUSTOMER ACTION             │              EXECUTE
+       COMPLETED?               │                  │
+        /      \                │                  ▼
+      YES       NO              │               GATEWAY
+       │         │              │                  │
+       ▼         │              │                  ▼
+   RE-EVALUATE   │              │              SUCCESS?
+       │         │              │             /       \
+       ▼         │              │           YES        NO
+     RETRY       │              │            │          │
+       │         │              │            ▼          ▼
+       ▼         │              │        RECOVERED  RE-EVALUATING
+     SUCCESS     │              │                       │
+       │         │              │                       │
+       └─────────┴──────────────┴───────────────────────┘
+                                │
+                                ▼
+                         FRESH DECISION CYCLE
 ```
 
 ### Decision Layers
@@ -112,14 +113,14 @@ Revora AI follows a **multi-stage, closed-loop recovery workflow** where every s
 | Stage            | Question Answered                                      |
 | ---------------- | ------------------------------------------------------ |
 | **Detect**       | What payment failed and should enter recovery?         |
-| **Diagnose**     | Why did the payment fail?                              |
+| **Diagnose**     | What does the gateway failure information indicate?    |
 | **ML Inference** | How likely is recovery, and which action is promising? |
 | **Prioritize**   | Which case has the highest expected recovery value?    |
-| **Decide**       | Retry, wait for customer action, escalate, or stop?    |
+| **Decide**       | What should Revora do next?                            |
 | **Guardrails**   | Is the proposed action actually allowed?               |
 | **Execute**      | Carry out the permitted action.                        |
 | **Observe**      | What actually happened?                                |
-| **Re-evaluate**  | What should Revora AI do next?                         |
+| **Re-evaluate**  | What should Revora do after the new outcome?           |
 
 This architecture makes recovery **adaptive rather than one-shot**.
 
@@ -139,9 +140,15 @@ for each failed payment.
 
 The probability becomes a key signal for prioritization and recovery decision-making.
 
+The model uses payment and customer context rather than relying on a fixed recovery percentage.
+
+---
+
 ## Root-Cause Diagnosis
 
-Failures are mapped into meaningful operational categories, such as:
+Payment gateways provide failure information such as decline reasons and response codes.
+
+Revora AI interprets that information into meaningful operational categories, including:
 
 ```text
 TRANSIENT_FAILURE
@@ -151,11 +158,15 @@ PAYMENT_INSTRUMENT
 GATEWAY_ERROR
 ```
 
-with diagnostic confidence.
+Each diagnosis is accompanied by a confidence value.
+
+This allows the recovery system to distinguish between failures that may recover automatically and failures that require customer or operational intervention.
+
+---
 
 ## Action Prediction
 
-The action model uses a trained `HistGradientBoostingClassifier` and `predict_proba()` to dynamically estimate the probability of:
+Revora AI uses a trained `HistGradientBoostingClassifier` with `predict_proba()` to dynamically estimate the likelihood of:
 
 ```text
 RETRY
@@ -164,7 +175,9 @@ HUMAN_REVIEW
 STOP
 ```
 
-rather than relying on fixed action outputs.
+The action model considers multiple payment, customer, recovery, and diagnostic features instead of relying on a single hardcoded failure-to-action mapping.
+
+The resulting recommendation is then evaluated by deterministic policy guardrails before execution.
 
 ---
 
@@ -202,9 +215,9 @@ Although Payment A is larger, Payment B represents the stronger recovery opportu
 
 # Intelligent Recovery Paths
 
-### Automated Retry
+## Automated Retry
 
-For suitable transient failures:
+For suitable failures:
 
 ```text
 Failure
@@ -222,7 +235,11 @@ Gateway
 Success → RECOVERED
 ```
 
-### Customer Action
+A retry is never executed solely because the ML model recommends it. Deterministic guardrails independently validate the action first.
+
+---
+
+## Customer Action
 
 For customer-dependent failures:
 
@@ -233,20 +250,50 @@ CUSTOMER_ACTION_REQUIRED
         ↓
 UPDATE_CARD
         ↓
-Customer Nudge
+CUSTOMER NUDGE
         ↓
-Wait
+WAIT
         ↓
-Customer Resolves
+CUSTOMER COMPLETES ACTION
         ↓
-Re-evaluate
+RE-EVALUATE
         ↓
-Retry
+GUARDRAILS
+        ↓
+RETRY
 ```
 
-Examples include expired cards, insufficient funds, and payment-method issues.
+Examples include:
 
-### Human Review
+* Expired cards
+* Invalid payment methods
+* Insufficient funds
+* Authentication requirements
+* Mandate authorization
+
+### Important distinction
+
+```text
+CUSTOMER_ACTION_REQUIRED
+=
+The customer must fix something.
+
+CUSTOMER_NUDGE
+=
+The system communicates the required action.
+
+HUMAN_REVIEW
+=
+Operations must investigate or decide.
+```
+
+Revora does **not** automatically mark a customer action as completed.
+
+The system waits for an actual customer-action completion event. In Test Mode, this can be represented through a controlled simulated customer event.
+
+---
+
+# Human Review
 
 Risk-sensitive or ambiguous cases can be escalated:
 
@@ -262,9 +309,22 @@ Decision
 Recovery Action
 ```
 
-Human approval itself is not considered payment recovery.
+Examples include:
 
-### Stop
+* Suspicious or fraud-like activity
+* High-risk payments
+* Very high-value payments
+* Repeated failures
+* Policy exceptions
+* Cases requiring manual investigation
+
+Human review itself is **not** considered payment recovery.
+
+The case becomes `RECOVERED` only after the underlying payment actually succeeds.
+
+---
+
+# Stop
 
 Cases that should not continue through automated recovery move to:
 
@@ -273,6 +333,17 @@ STOPPED
 ```
 
 with the appropriate policy reason preserved.
+
+Examples include:
+
+```text
+Maximum retry limit reached
+Fraud / risk restriction
+Customer-action window expired
+Policy hard stop
+```
+
+A stopped case does not automatically retry unless the existing system explicitly provides a controlled reopening mechanism.
 
 ---
 
@@ -306,18 +377,18 @@ STOPPED
 RECOVERED
 ```
 
-This creates a **closed-loop recovery system** capable of adapting after each outcome.
+Each re-evaluation uses the **current case state and fresh context**, rather than blindly repeating the previous action.
 
 ---
 
 # Scheduled Recovery
 
-When an action cannot be executed yet, Revora AI persists a backend-controlled `retry_after` timestamp.
+When an action is not yet eligible for execution, Revora AI persists a backend-controlled `retry_after` timestamp.
 
 ```text
-Retry requested
+Retry Requested
       ↓
-Retry not yet eligible
+Retry Not Yet Eligible
       ↓
 Scheduled
       ↓
@@ -332,9 +403,47 @@ Guardrails
 Execution
 ```
 
-The frontend displays timing information, while the backend remains responsible for execution.
+The frontend displays timing information, while the backend remains responsible for determining when execution is permitted.
 
-This allows the system to continue operating even when the browser is no longer open.
+This allows scheduled recovery to continue even when the browser is no longer open.
+
+---
+
+# Customer-Action Waiting
+
+Customer-dependent cases follow a different lifecycle.
+
+```text
+CUSTOMER_ACTION_REQUIRED
+          ↓
+CUSTOMER NUDGE
+          ↓
+WAIT
+          ↓
+Customer Completes Required Action
+          ↓
+Completion Event
+          ↓
+RE-EVALUATE
+          ↓
+Fresh ML + Policy Decision
+          ↓
+Retry / Escalate / Stop
+```
+
+There is **no automatic retry while the required customer action remains incomplete**.
+
+If the customer does not resolve the issue before the configured recovery window expires:
+
+```text
+CUSTOMER_ACTION_REQUIRED
+          ↓
+WINDOW EXPIRED
+          ↓
+STOPPED
+```
+
+This prevents the system from repeatedly attempting a payment that still requires customer intervention.
 
 ---
 
@@ -366,9 +475,12 @@ Automatic recovery amount limits
 Risk restrictions
 Duplicate execution protection
 Current payment state
+Customer-action requirements
 ```
 
 > **AI recommends. Policy validates. The system executes.**
+
+The ML or action model cannot override deterministic safety policies.
 
 ---
 
@@ -428,9 +540,9 @@ ESCALATED
 RE_EVALUATING
 ```
 
-Recovered cases leave the active operational queue and remain available through a dedicated **Recovered** view.
+Recovered cases leave the active operational queue while remaining available for historical reporting and analytics.
 
-The underlying case remains stored for history and analytics.
+The underlying recovery case remains persistent throughout its lifecycle.
 
 ---
 
@@ -520,6 +632,34 @@ PRIORITIZED
 
 Individual `AgentRun` and `RecoveryAction` identifiers may change because each execution is a separate attempt.
 
+This provides stable case-level correlation while preserving execution-level history.
+
+---
+
+# Terminal Recovery Invariant
+
+Revora AI treats successful payment recovery as a terminal business outcome.
+
+```text
+Payment.status == SUCCESS
+        ↓
+RecoveryCase = RECOVERED
+        ↓
+next_action = NONE
+        ↓
+No further automatic execution
+```
+
+A recovered case must never:
+
+* Become `STOPPED`
+* Become `ESCALATED`
+* Enter `CUSTOMER_ACTION_REQUIRED`
+* Receive another automatic retry
+* Receive another recovery execution
+
+This ensures that **recovery represents an actual successful payment**, not merely an attempted action.
+
 ---
 
 # Analytics
@@ -557,7 +697,7 @@ The analytics layer uses persisted backend data so operational metrics remain co
 
 # Operations Dashboard
 
-Revora AI provides dedicated operational views for:
+Revora AI provides dedicated operational views:
 
 | View                 | Purpose                                |
 | -------------------- | -------------------------------------- |
@@ -633,13 +773,15 @@ Webhook Secret Configuration
 Backend-Only Credentials
 ```
 
-Production CORS is restricted to trusted frontend origins rather than using a wildcard origin.
+Production CORS is restricted to explicitly trusted frontend origins rather than using a wildcard origin.
+
+Sensitive credentials are kept on the backend and are not exposed through frontend configuration.
 
 ---
 
 # Simulation & Demo Environment
 
-Revora AI provides a controlled payment simulation environment for demonstrating the complete recovery lifecycle without requiring live financial transactions.
+Revora AI provides a controlled payment simulation environment for demonstrating the recovery lifecycle without requiring live financial transactions.
 
 A simulated payment can move through:
 
@@ -663,7 +805,25 @@ SUCCESS / FAILURE
 RECOVERED / RE-EVALUATING
 ```
 
-This makes the end-to-end system demonstrable in a controlled environment.
+Customer-dependent scenarios can additionally demonstrate:
+
+```text
+CUSTOMER_ACTION_REQUIRED
+        ↓
+CUSTOMER NUDGE
+        ↓
+WAIT
+        ↓
+CUSTOMER ACTION COMPLETED
+        ↓
+RE-EVALUATE
+        ↓
+RETRY
+        ↓
+RECOVERED
+```
+
+This provides a controlled way to demonstrate the complete system behavior.
 
 ---
 
@@ -675,6 +835,7 @@ This makes the end-to-end system demonstrable in a controlled environment.
 | Backend            | Python, FastAPI                |
 | Database           | SQLite, SQLAlchemy             |
 | Machine Learning   | scikit-learn                   |
+| Recovery Model     | RandomForestClassifier         |
 | Action Model       | HistGradientBoostingClassifier |
 | Authentication     | JWT, bcrypt                    |
 | API                | REST                           |
@@ -692,14 +853,17 @@ Revora-AI/
 │
 ├── backend/
 │   ├── app/
+│   ├── data/
 │   └── tests/
 │
 ├── frontend/
 │   └── src/
 │
-├── recoverai.db
-└── README.md
+├── README.md
+└── .gitignore
 ```
+
+Runtime artifacts, local databases, generated build output, and dependency directories should remain outside source control where appropriate.
 
 ---
 
@@ -710,7 +874,7 @@ Revora-AI/
 ```bash
 cd backend
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+python -m uvicorn app.main:app --reload --port 8000
 ```
 
 ## Frontend
@@ -752,7 +916,7 @@ Sensitive backend credentials belong in the backend environment and should never
 
 # Verification
 
-The system includes automated verification for:
+The project includes automated verification covering:
 
 ```text
 ML inference
@@ -772,14 +936,7 @@ Notifications
 Audit behavior
 ```
 
-The latest complete verification reported:
-
-```text
-71 tests passed
-0 failed
-```
-
-with a successful frontend production build.
+The verification suite is designed to validate both individual components and end-to-end recovery behavior.
 
 ---
 
